@@ -1,0 +1,51 @@
+\documentclass{article}
+
+\usepackage{amsmath}
+
+\begin{document}
+
+\section{Even truncation}
+One-sided p-value:
+$$
+Y \sim N(0, 1), \;\;\;\;\ c >0
+$$$$
+P(Y > t | Y > c) = \frac{1 - \Phi(t)}{1 - \Phi(c)}
+$$
+
+Two-sided p-value:
+$$
+P(Y > t | |Y| > c) = \frac{1 - \Phi(t)}{1 - \Phi(c) + \Phi(-c)} = \frac{1 - \Phi(t)}{2(1 - \Phi(c))}
+$$
+
+So the p-value in the two-sided case is half of that of the one-sided p-value, but the test needs but if testing is done at a level $\alpha$, the two-sided p-value needs to be lower than $\alpha/2$ and the one-sided p-value only needs to be lower than $\alpha$.
+
+
+\section{Uneven truncation}
+One-sided p-value:
+$$
+Y \sim N(0, 1), \;\;\;\;\ u >0, \; l  < 0, \; , |u| > |l|, \; t > 0.
+$$$$
+P(Y > t | Y > u) = \frac{1 - \Phi(t)}{1 - \Phi(u)}
+$$
+
+Two-sided p-value:
+$$
+P(Y > t | Y > u \cup Y < l) = \frac{1 - \Phi(t)}{1 - \Phi(u) + \Phi(l)} > \frac{1 - \Phi(t)}{2(1 - \Phi(u))}
+$$
+
+For a positive realization, conditioning on one-sided screening and performing a one-sided test will lead to more rejections than conditioning on a two-sided event and performing a two-sided test. So it is likely, that one-sided conditioning will be more powerful for $\mu > 0$ and less powerful for $\mu < 0$. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+\end{document}

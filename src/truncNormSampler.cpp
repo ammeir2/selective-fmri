@@ -14,8 +14,7 @@ double sampleUnivTruncNorm(double mu, double sd, double lower, double upper) {
   // sampler. They do something similar in the truncnorm package.
   while(sample < lower | sample > upper | isinf(std::abs(sample))) {
     sample = rnorm(1, mu, sd)[0] ;
-    tries += 1 ;
-    if(tries > 1000) break ;
+    if(++tries > 1000) break ;
   }
 
   return sample ;

@@ -69,7 +69,7 @@ optimizeSelected <- function(y, cov, threshold, projected = NULL,
   restarts <- 0
   for(i in 2:maxiter) {
     # Every now and then recompute probability to be positive/negative
-    if((i < (100 + delay) & (i %% 4 == 0)) | (i %% 50 == 0 & i <= assumeConvergence)) {
+    if((i == 2 | i < (100 + delay) & (i %% 4 == 0)) | (i %% 50 == 0 & i <= assumeConvergence)) {
       a[selected] <- threshold[selected]
       b[selected] <- Inf
       posProb <- mvtnorm::pmvnorm(a, b, mean = mu, sigma = cov)[[1]]

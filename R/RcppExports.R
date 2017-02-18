@@ -2,6 +2,6 @@
 # Generator token: 10BE3573-1514-4C36-9D1C-5A225CD40393
 
 sampleTruncNorm <- function(sample, lower, upper, mean, precision, cycles) {
-    .Call('selectiveMRI_sampleTruncNorm', PACKAGE = 'selectiveMRI', sample, lower, upper, mean, precision, cycles)
+    .Call('selectivefmri_sampleTruncNorm', PACKAGE = 'selectivefmri', sample, lower, upper, mean, precision, cycles)
 }
 

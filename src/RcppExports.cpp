@@ -8,7 +8,7 @@ using namespace Rcpp;
 
 // sampleTruncNorm
 NumericVector sampleTruncNorm(NumericVector sample, NumericVector lower, NumericVector upper, NumericVector mean, NumericMatrix precision, int cycles);
-RcppExport SEXP selectiveMRI_sampleTruncNorm(SEXP sampleSEXP, SEXP lowerSEXP, SEXP upperSEXP, SEXP meanSEXP, SEXP precisionSEXP, SEXP cyclesSEXP) {
+RcppExport SEXP selectivefmri_sampleTruncNorm(SEXP sampleSEXP, SEXP lowerSEXP, SEXP upperSEXP, SEXP meanSEXP, SEXP precisionSEXP, SEXP cyclesSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;

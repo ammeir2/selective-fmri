@@ -1,4 +1,4 @@
-library(selectiveMRI)
+library('selectivefmri')
 
 generateHMMmu <- function(p, signal, sig = 0.1) {
   stateMat <- matrix(0.05, nrow = 3, ncol = 3)

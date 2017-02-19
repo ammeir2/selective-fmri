@@ -23,7 +23,8 @@ optimizeSelected <- function(y, cov, threshold, projected = NULL,
                              lambdaStart = 0,
                              delay = 100,
                              maxiter = 4000,
-                             assumeConvergence = 2000) {
+                             assumeConvergence = 2000,
+                             CIalpha = 0.05) {
   # Basic checks and preliminaries ---------
   selected <- abs(y) > threshold
   nselected <- sum(selected)
@@ -115,15 +116,15 @@ optimizeSelected <- function(y, cov, threshold, projected = NULL,
 
     # Computing barrier part of gradient
     if(is.null(projected)) {
-      barrierGrad <- (signs / abs(mu)) * (barrierCoef * stepSizeCoef / i)
+      barrierGrad <- (signs / abs(mu)) * (barrierCoef / min(max(i - delay, 1), assumeConvergence - delay))
     } else {
       lambda <- max(lambda + (sum(mu[selected]^2) - ball) * 4, 0)
-      barrierGrad <- - mu * lambda * stepSizeCoef / max(i - delay, 1)^stepRate
+      barrierGrad <- - mu * lambda * stepSizeCoef
     }
 
     # Computing gradient and projecting if necessary
     # The projection of the gradient is simply setting its mean to zero
-    gradient <- (suffStat - condExp) / (i^stepRate) * stepSizeCoef + barrierGrad
+    gradient <- (suffStat - condExp + barrierGrad) / max(i - delay, 1) * stepSizeCoef
     gradient[!selected] <- 0
     if(!is.null(projected)) {
       gradMean <- mean(gradient[selected])
@@ -149,13 +150,41 @@ optimizeSelected <- function(y, cov, threshold, projected = NULL,
     warning(paste("Chain restarted", restarts, "times!"))
   }
 
+  # Computations for confidence intervals ---------------------------
+  forQuants <- sampleMat[assumeConvergence:(maxiter - 1), ]
+  forQuants <- forQuants %*% invcov
+  condVar <- var(forQuants)
+  centers <- colMeans(forQuants)
+  barrierDeriv <- (signs / abs(mu)) * (barrierCoef / (assumeConvergence - delay))
+  forQuants <- t(t(forQuants) - centers + barrierDeriv)
+  sandwich <- diag(ncol(forQuants))
+  sandwich[selected, ] <- condVar[selected, ]
+  forQuants <- forQuants %*% solve(sandwich)
+  ciQuantiles <- apply(forQuants, 2, function(x) quantile(x, c(1 - CIalpha / 2, CIalpha / 2)))
+  ciQuantiles <- t(t(ciQuantiles) * sqrt(vars))
+
+  forQuants <- rowMeans(t(t(forQuants) * sqrt(vars)))
+  meanquantiles <- quantile(forQuants, c(1 - CIalpha / 2, CIalpha / 2))
+
+  # Unnormalizing estimates and samples --------------------------
   for(i in 1:ncol(sampleMat)) {
     sampleMat[, i] <- sampleMat[, i] * sqrt(vars[i])
     estimates[, i] <- estimates[, i] * sqrt(vars[i])
   }
 
+  # Computing estimate and CIs -----------------------------
   conditional <- colMeans(estimates[floor(maxiter * 0.8):maxiter, ])
+  meanCI <- mean(conditional[selected]) - meanquantiles
+
+  CI <- matrix(nrow = length(conditional), ncol = 2)
+  for(i in 1:ncol(ciQuantiles)) {
+    CI[i, ] <- conditional[i] - ciQuantiles[, i]
+  }
+  CI <- CI[selected, ]
+
   return(list(sample = sampleMat,
               estimates = estimates,
-              conditional = conditional))
+              conditional = conditional,
+              coordinateCI = CI,
+              meanCI = meanCI))
 }

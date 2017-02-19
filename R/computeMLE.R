@@ -14,6 +14,13 @@
 #               be. Should be set to a high value if mean is constrained to a small ball.
 # maxiter = Number of stochastic gradient steps. 1000 is usually more than enough. For some projected
 #           problems a large number of steps is required to properly tune lambda.
+
+# Outputs:
+# sample - a matrix of samples
+# estimates - the optimization path
+# conditional - the conditional estimate
+# coordinateCI - confidence intervals for the coordinates
+# meanCI - CI for the mean
 optimizeSelected <- function(y, cov, threshold, projected = NULL,
                              quadraticSlack = 0.1,
                              barrierCoef = 0.5,

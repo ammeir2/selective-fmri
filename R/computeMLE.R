@@ -21,7 +21,9 @@
 # conditional - the conditional estimate
 # coordinateCI - confidence intervals for the coordinates
 # meanCI - CI for the mean
-optimizeSelected <- function(y, cov, threshold, projected = NULL,
+optimizeSelected <- function(y, cov, threshold,
+                             selected = NULL,
+                             projected = NULL,
                              quadraticSlack = 0.1,
                              barrierCoef = 0.5,
                              stepSizeCoef = 0.25,
@@ -33,7 +35,9 @@ optimizeSelected <- function(y, cov, threshold, projected = NULL,
                              assumeConvergence = 2000,
                              CIalpha = 0.05) {
   # Basic checks and preliminaries ---------
-  selected <- abs(y) > threshold
+  if (is.null(selected)){
+    selected <- abs(y) > threshold
+  }
   nselected <- sum(selected)
   p <- length(y)
   s <- sum(selected)
@@ -80,9 +84,13 @@ optimizeSelected <- function(y, cov, threshold, projected = NULL,
     if((i == 2 | i < (100 + delay) & (i %% 4 == 0)) | (i %% 50 == 0 & i <= assumeConvergence)) {
       a[selected] <- threshold[selected]
       b[selected] <- Inf
+      a[!selected] <- -Inf
+      b[!selected] <- threshold[!selected]
       posProb <- mvtnorm::pmvnorm(a, b, mean = mu, sigma = cov)[[1]]
       a[selected] <- -Inf
       b[selected] <- -threshold[selected]
+      a[!selected] <- -threshold[!selected]
+      b[!selected] <- Inf
       negProb <- mvtnorm::pmvnorm(a, b, mean = mu, sigma = cov)[[1]]
       posProb <- posProb / (posProb + negProb)
     }
@@ -93,6 +101,8 @@ optimizeSelected <- function(y, cov, threshold, projected = NULL,
     if(sampSign == 1) {
       a[selected] <- threshold[selected]
       b[selected] <- Inf
+      a[!selected] <- -Inf
+      b[!selected] <- threshold[!selected]
       newsamp <- sampleTruncNorm(posSamp, a, b, mu, invcov, trimSample)
       attempts <- 0
       while(any(is.nan(newsamp))) {
@@ -106,6 +116,8 @@ optimizeSelected <- function(y, cov, threshold, projected = NULL,
     } else {
       a[selected] <- -Inf
       b[selected] <- -threshold[selected]
+      a[!selected] <- -threshold[!selected]
+      b[!selected] <- Inf
       newsamp <- sampleTruncNorm(negSamp, a, b, mu, invcov, trimSample)
       attempts <- 0
       while(any(is.nan(newsamp))) {

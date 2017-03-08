@@ -1,0 +1,104 @@
+run.sim <- function(config) {
+  snr <- config[[1]]
+  rho <- config[[2]]
+  BHlevel <- config[[3]]
+  replications <- config[[4]]
+
+  I <- 11
+  J <- 11
+  K <- 9
+  dims <- c(I, J, K)
+
+  coordinates <- expand.grid(i = 1:I, j = 1:J, k = 1:K)
+  covariance <- rho^as.matrix(dist(coordinates[, 1:3], method = "euclidean",
+                                   diag = TRUE, upper = TRUE))
+  covEigen <- eigen(covariance)
+  sqrtCov <- covEigen$vectors %*% diag(sqrt(covEigen$values)) %*% t(covEigen$vectors)
+
+  simresults <- list()
+  simcover <- rep(NA, replications)
+  for(rep in 1:replications) {
+    selected <- FALSE
+    while(sum(selected) < 5) {
+      coordinates <- generateArrayData3D(dims, sqrtCov, snr)
+      coordinates$zval <- coordinates$observed / sqrt(diag(covariance))
+      coordinates$pval <- 2 * pnorm(-abs(coordinates$zval))
+      coordinates$qval <- p.adjust(coordinates$pval, method = "BH")
+      coordinates$selected <- coordinates$qval < BHlevel
+      selected <- coordinates$selected
+    }
+
+    print(c(rep = rep, rho = rho, BHlevel = BHlevel, snr = snr))
+    print(c(nselected = sum(selected)))
+    clusters <- findClusters(coordinates)
+    sizes <- sapply(clusters, nrow)
+    threshold <- qnorm(BHlevel * sum(coordinates$selected) / nrow(coordinates) / 2,
+                       lower.tail = FALSE)
+
+    results <- list()
+    iterCover <- 0
+    weights <- 0
+    for(m in 1:length(clusters)) {
+      results[[m]] <- list()
+      cluster <- clusters[[m]]
+      cluster <- cluster[cluster$selected, ]
+      if(nrow(cluster) == 1) next
+      print(c(round(m / length(clusters), 2), nrow(cluster)))
+      subCov <- covariance[cluster$row, cluster$row, drop = FALSE]
+      observed <- coordinates$observed[cluster$row]
+      result <- NULL
+      try(result <- optimizeSelected(observed, subCov, threshold,
+                                 stepRate = 0.6,
+                                 delay = 10,
+                                 assumeConvergence = 2000,
+                                 trimSample = 100,
+                                 maxiter = 7000,
+                                 verbose = FALSE))
+      if(is.null(result)) next
+      conditional <- result$conditional
+      selected <- coordinates$selected[cluster$row]
+      signal <- coordinates$signal[cluster$row]
+      coordinatedat <- data.frame(conditional = conditional,
+                                  observed = observed,
+                                  signal = signal,
+                                  selected = selected)
+      coordinatedat$lCI[selected] <- result$coordinateCI[, 2]
+      coordinatedat$uCI[selected] <- result$coordinateCI[, 1]
+
+      naive <- mean(observed[selected])
+      e <- selected / sum(selected)
+      naiveVar <- t(e) %*% subCov %*% e
+      naiveSD <- sqrt(naiveVar)
+      naiveCI <- naive + c(-1, 1) * 1.96 * naiveSD
+
+      true <- mean(signal[selected])
+      conditional <- mean(conditional[selected])
+      lCI <- c(NA, naiveCI[1], sort(result$meanCI)[1])
+      uCI <- c(NA, naiveCI[2],  sort(result$meanCI)[2])
+      meanResult <- data.frame(type = c("true", "naive", "conditional"),
+                               estimate = c(true, naive, conditional),
+                               lCI = lCI, uCI = uCI)
+      results[[m]][[3]] <- result
+      results[[m]][[1]] <- coordinatedat
+      results[[m]][[2]] <- meanResult
+
+      print(meanResult)
+
+      iterCover <- iterCover + sum(selected) * (meanResult$lCI[3] < true & meanResult$uCI[3] > true)
+      weights <- weights + sum(selected)
+    }
+
+    simcover[rep] <- sum(iterCover) / sum(weights)
+    print(c(wcover = mean(simcover, na.rm = TRUE)))
+    simresults[[rep]] <- results
+  }
+
+  return(simresults)
+}
+
+configurations <- expand.grid(snr = c(1),
+                              rho = 0.7,
+                              BHlevel = 0.1,
+                              replications = 10)
+
+system.time(simResults <- apply(configurations, 1, run.sim))

@@ -26,7 +26,7 @@ optimizeSelected <- function(y, cov, threshold,
                              projected = NULL,
                              quadraticSlack = 0.1,
                              barrierCoef = 0.5,
-                             stepSizeCoef = 0.25,
+                             stepSizeCoef = 0.01,
                              stepRate = 0.65,
                              trimSample = 40,
                              lambdaStart = 0,
@@ -62,8 +62,10 @@ optimizeSelected <- function(y, cov, threshold,
   # use a quadratic barrier function. ball is the size radius in which mu
   # is allowed to be
   if(!is.null(projected)) {
+    mu <- mu * sqrt(vars)
     mu[selected] <- rep(projected, sum(selected))
-    ball <- sum(selected) * projected^2 + quadraticSlack
+    mu <- mu / sqrt(vars)
+    ball <- sum(selected * mean(mu[selected])^2) + quadraticSlack
   }
 
   estimates <- matrix(nrow = maxiter, ncol = p)
@@ -145,16 +147,21 @@ optimizeSelected <- function(y, cov, threshold,
     # The projection of the gradient is simply setting its mean to zero
     gradient <- (suffStat - condExp + barrierGrad) / max(i - delay, 1) * stepSizeCoef
     gradient[!selected] <- 0
+    gradsign <- sign(gradient)
+    gradient <- pmin(abs(gradient), abs(max(y)) / 10) * gradsign
     if(!is.null(projected)) {
+      gradient <- gradient * sqrt(vars)
       gradMean <- mean(gradient[selected])
       gradient[selected] <- gradient[selected] - gradMean
+      gradient <- gradient / sqrt(vars)
     }
 
     # Updating estimate. The error thing is to make sure we didn't accidently
     # cross the barrier. There might be a better way to do this.
     mu <- mu + gradient
-    mu <- pmin(abs(mu), abs(y)) * sign(y)
+    print(gradient)
     if(is.null(projected)) {
+      mu <- pmin(abs(mu), abs(y)) * sign(y)
       error <- sign(y) != sign(mu)
       mu[error] <- sign(y)[error] * 10^-4
     }

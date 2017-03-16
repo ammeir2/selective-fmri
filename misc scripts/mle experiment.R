@@ -99,26 +99,28 @@ print(mean(sapply(1:nrow(CIs), function(i) CIs[i, 1] < true[i] & CIs[i, 2] > tru
 
 
 # Constrained -----------------
-# projectTo <- NULL
-# slack <- 10^-2
-# result <- optimizeSelected(yhat[clusterPlus], subCov, threshold,
-#                            projected = projectTo, quadraticSlack = slack,
-#                            lambdaStart = 50,
-#                            stepSizeCoef = 0.25,
-#                            stepRate = 0.6,
-#                            delay = 100,
-#                            maxiter = 10^4,
-#                            assumeConvergence = 4000)$estimates
-# nsamp <- nrow(result)
-# conditional <- colMeans(result[floor(nsamp * 3 / 4):nsamp, selected])
-# mean(conditional)
-# c(mean(conditional^2), sum(selected) * projectTo^2 + slack)
-#
-# require(dplyr)
-# require(reshape2)
-# require(ggplot2)
-# forplot <- melt(result[, selected])
-# names(forplot) <- c("iter", "variable", "mu")
-# ggplot(forplot) + geom_line(aes(x = iter, y = mu, col = factor(variable))) +
-#   theme_bw() + geom_hline(yintercept = 0)
-#
+projectTo <- 0.1
+slack <- 1
+result <- optimizeSelected(yhat[clusterPlus], subCov, threshold,
+                           selected = NULL,
+                           projected = projectTo, quadraticSlack = slack,
+                           lambdaStart = 50,
+                           stepRate = 0.6,
+                           delay = 100,
+                           maxiter = 10^4,
+                           assumeConvergence = 4000)
+mean(result$conditional[abs(yhat[clusterPlus]) > threshold])
+result <- result$estimates
+nsamp <- nrow(result)
+conditional <- colMeans(result[floor(nsamp * 3 / 4):nsamp, selected])
+mean(conditional)
+c(mean(conditional^2), sum(selected) * projectTo^2 + slack)
+
+require(dplyr)
+require(reshape2)
+require(ggplot2)
+forplot <- melt(result[, selected])
+names(forplot) <- c("iter", "variable", "mu")
+ggplot(forplot) + geom_line(aes(x = iter, y = mu, col = factor(variable))) +
+  theme_bw() + geom_hline(yintercept = 0)
+

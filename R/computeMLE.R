@@ -26,14 +26,15 @@ optimizeSelected <- function(y, cov, threshold,
                              projected = NULL,
                              quadraticSlack = 0.1,
                              barrierCoef = 0.5,
-                             stepSizeCoef = 0.01,
+                             stepSizeCoef = 0.25,
                              stepRate = 0.65,
                              trimSample = 40,
                              lambdaStart = 0,
                              delay = 100,
                              maxiter = 4000,
                              assumeConvergence = 2000,
-                             CIalpha = 0.05) {
+                             CIalpha = 0.05,
+                             init = NULL) {
   # Basic checks and preliminaries ---------
   if (is.null(selected)){
     selected <- abs(y) > threshold
@@ -46,7 +47,13 @@ optimizeSelected <- function(y, cov, threshold,
   vars <- diag(cov)
   cov <- cov2cor(cov)
   y <- y / sqrt(vars)
-  mu <- y
+  if(!is.null(init)) {
+    if(length(init) != length(y)) stop("If init is not NULL, then its length must match the length of y.")
+    mu <- init
+  } else {
+    mu <- y
+    mu[!selected] <- 0
+  }
   threshold <- threshold / sqrt(vars)
 
   sds <- sqrt(diag(cov))
@@ -137,7 +144,7 @@ optimizeSelected <- function(y, cov, threshold,
 
     # Computing barrier part of gradient
     if(is.null(projected)) {
-      barrierGrad <- (signs / abs(mu)) * (barrierCoef / min(max(i - delay, 1), assumeConvergence - delay))
+      barrierGrad <- (sign(mu) / abs(mean(mu[selected]))) * (barrierCoef / min(max(i - delay, 1), assumeConvergence - delay)) / sum(selected)
     } else {
       lambda <- max(lambda + (sum(mu[selected]^2) - ball) * 4, 0)
       barrierGrad <- - mu * lambda * stepSizeCoef
@@ -148,7 +155,7 @@ optimizeSelected <- function(y, cov, threshold,
     gradient <- (suffStat - condExp + barrierGrad) / max(i - delay, 1) * stepSizeCoef
     gradient[!selected] <- 0
     gradsign <- sign(gradient)
-    gradient <- pmin(abs(gradient), abs(max(y)) / 10) * gradsign
+    gradient <- pmin(abs(gradient), 0.05) * gradsign
     if(!is.null(projected)) {
       gradient <- gradient * sqrt(vars)
       gradMean <- mean(gradient[selected])
@@ -159,16 +166,13 @@ optimizeSelected <- function(y, cov, threshold,
     # Updating estimate. The error thing is to make sure we didn't accidently
     # cross the barrier. There might be a better way to do this.
     mu <- mu + gradient
-    print(gradient)
     if(is.null(projected)) {
       mu <- pmin(abs(mu), abs(y)) * sign(y)
-      error <- sign(y) != sign(mu)
-      mu[error] <- sign(y)[error] * 10^-4
     }
     estimates[i,] <- mu
 
     # progress...
-    if((i %% 100) == 0) cat(i, " ")
+    if((i %% 100) == 0) cat(i, " ", round(mean(mu[selected]), 3), " ")
   }
   cat("\n")
 
@@ -181,15 +185,18 @@ optimizeSelected <- function(y, cov, threshold,
   forQuants <- forQuants %*% invcov
   condVar <- var(forQuants)
   centers <- colMeans(forQuants)
-  barrierDeriv <- (signs / abs(mu)) * (barrierCoef / (assumeConvergence - delay))
+  barrierDeriv <- 0#(signs / abs(mu)) * (barrierCoef / (assumeConvergence - delay))
   forQuants <- t(t(forQuants) - centers + barrierDeriv)
   sandwich <- diag(ncol(forQuants))
   sandwich[selected, ] <- condVar[selected, ]
-  forQuants <- forQuants %*% solve(sandwich)
+  B <- t(forQuants) %*% forQuants / nrow(forQuants)
+  S <- solve(sandwich)
+  S <- t(S) %*% B %*% S
+  forQuants <- forQuants %*% t(solve(sandwich))
   ciQuantiles <- apply(forQuants, 2, function(x) quantile(x, c(1 - CIalpha / 2, CIalpha / 2)))
   ciQuantiles <- t(t(ciQuantiles) * sqrt(vars))
 
-  forQuants <- rowMeans(t(t(forQuants) * sqrt(vars)))
+  forQuants <- rowMeans(t(t(forQuants) * sqrt(vars))[, selected, drop = FALSE])
   meanquantiles <- quantile(forQuants, c(1 - CIalpha / 2, CIalpha / 2))
 
   # Unnormalizing estimates and samples --------------------------
@@ -206,7 +213,7 @@ optimizeSelected <- function(y, cov, threshold,
   for(i in 1:ncol(ciQuantiles)) {
     CI[i, ] <- conditional[i] - ciQuantiles[, i]
   }
-  CI <- CI[selected, ]
+  CI <- CI[selected, , drop = FALSE]
 
   return(list(sample = sampleMat,
               estimates = estimates,

@@ -52,16 +52,16 @@ findClusters <- function(coordinates) {
 }
 
 # parameters + setup
-I <- 11
-J <- 10
-K <- 9
-rho <- 0.7
-coordinates <- expand.grid(i = 1:I, j = 1:J, k = 1:K)
-covariance <- rho^as.matrix(dist(coordinates[, 1:3], method = "euclidean",
-                                 diag = TRUE, upper = TRUE))
-covEigen <- eigen(covariance)
-sqrtCov <- covEigen$vectors %*% diag(sqrt(covEigen$values)) %*% t(covEigen$vectors)
-precision <- covEigen$vectors %*% diag((covEigen$values)^-1) %*% t(covEigen$vectors)
+# I <- 11
+# J <- 10
+# K <- 9
+# rho <- 0.7
+# coordinates <- expand.grid(i = 1:I, j = 1:J, k = 1:K)
+# covariance <- rho^as.matrix(dist(coordinates[, 1:3], method = "euclidean",
+#                                  diag = TRUE, upper = TRUE))
+# covEigen <- eigen(covariance)
+# sqrtCov <- covEigen$vectors %*% diag(sqrt(covEigen$values)) %*% t(covEigen$vectors)
+# precision <- covEigen$vectors %*% diag((covEigen$values)^-1) %*% t(covEigen$vectors)
 targetSnr <- 0.1
 
 # Generating Signal ------------
@@ -114,20 +114,54 @@ cbind(coordinates$observed[cluster$row], cluster$selected)
 #                    lower.tail = FALSE)
 
 results <- list()
+pvals <- numeric(length(clusters))
+par(mfrow = c(4, 3))
 for(m in 1:length(clusters)) {
   results[[m]] <- list()
   cluster <- clusters[[m]]
   print(c(round(m / length(clusters), 2), nrow(cluster)))
   subCov <- covariance[cluster$row, cluster$row]
   observed <- coordinates$observed[cluster$row]
-  result <- optimizeSelected(observed, subCov, threshold,
-                             stepRate = 0.6,
+  selected <- coordinates$selected[cluster$row]
+  signal <- coordinates$signal[cluster$row]
+  presult <- optimizeSelected(observed, subCov, threshold,
+                             #projected = mean(signal[selected]),
+                             barrierCoef = 0,
+                             quadraticSlack = 2,
+                             stepRate = 0.25,
+                             stepSizeCoef = 0,
                              delay = 10,
-                             assumeConvergence = 2000,
+                             assumeConvergence = 500,
                              trimSample = 100,
-                             maxiter = 7000,
-                             verbose = FALSE)
+                             maxiter = 3000,
+                             init = signal)
+  #print(result$meanCI)
+  samp <- rowMeans(presult$sample[, selected, drop = FALSE])
+  plot(density(samp))
+  abline(v = mean(observed[selected]), col = "red")
+  obsmean <- mean(observed[selected])
+  pval <- 2 * min(mean(samp < obsmean), mean(samp > obsmean))
+  pvals[m] <- pval
+  print(c(pval = pval))
+
+  result <- optimizeSelected(observed, subCov, threshold,
+                              #projected = mean(signal[selected]),
+                              barrierCoef = 0,
+                              quadraticSlack = 2,
+                              stepRate = 0.6,
+                              stepSizeCoef = 2,
+                              delay = 10,
+                              assumeConvergence = 500,
+                              trimSample = 100,
+                              maxiter = 3000)
+  samp <- rowMeans(result$sample[, selected, drop = FALSE])
+  lines(density(samp), col = 'blue')
+  abline(v = mean(signal[selected]), col = "green")
+  abline(v = result$meanCI, col = "dark green")
+  abline(v = mean(result$conditional[selected]), col = "orange")
   conditional <- result$conditional
+  #print(mean(conditional[selected]))
+  #print(mean(signal[selected]))
   selected <- coordinates$selected[cluster$row]
   signal <- coordinates$signal[cluster$row]
   coordinatedat <- data.frame(conditional = conditional,
@@ -138,7 +172,8 @@ for(m in 1:length(clusters)) {
   coordinatedat$uCI[selected] <- result$coordinateCI[, 1]
   results[[m]][[3]] <- result
   results[[m]][[1]] <- coordinatedat
-  results[[m]][[2]] <- c(conditional = mean(conditional[selected]),
+  results[[m]][[2]] <- c(size = sum(selected),
+                         conditional = mean(conditional[selected]),
                          observed = mean(observed[selected]),
                          signal = mean(signal[selected]),
                          lCI = sort(result$meanCI)[1], uCI = sort(result$meanCI)[2])

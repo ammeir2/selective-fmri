@@ -16,7 +16,8 @@ run.sim <- function(config) {
   sqrtCov <- covEigen$vectors %*% diag(sqrt(covEigen$values)) %*% t(covEigen$vectors)
 
   simresults <- list()
-  simcover <- rep(NA, replications)
+  simcover <- matrix(nrow = replications, ncol = 3)
+  colnames(simcover) <- c("naive", "mle", "profile")
   for(rep in 1:replications) {
     selected <- FALSE
     while(sum(selected) < 5) {
@@ -37,23 +38,26 @@ run.sim <- function(config) {
 
     results <- list()
     iterCover <- 0
+    naiveCover <- 0
+    profCover <- 0
     weights <- 0
     for(m in 1:length(clusters)) {
       results[[m]] <- list()
       cluster <- clusters[[m]]
-      cluster <- cluster[cluster$selected, ]
+      cluster <- subset(cluster, !is.na(cluster$selected))
       if(nrow(cluster) == 1) next
       print(c(round(m / length(clusters), 2), nrow(cluster)))
       subCov <- covariance[cluster$row, cluster$row, drop = FALSE]
+
       observed <- coordinates$observed[cluster$row]
       result <- NULL
       try(result <- optimizeSelected(observed, subCov, threshold,
                                  stepRate = 0.6,
+                                 stepSizeCoef = 4,
                                  delay = 10,
-                                 assumeConvergence = 2000,
-                                 trimSample = 100,
-                                 maxiter = 7000,
-                                 verbose = FALSE))
+                                 assumeConvergence = 1000,
+                                 trimSample = 40,
+                                 maxiter = 3000))
       if(is.null(result)) next
       conditional <- result$conditional
       selected <- coordinates$selected[cluster$row]
@@ -65,7 +69,20 @@ run.sim <- function(config) {
       coordinatedat$lCI[selected] <- result$coordinateCI[, 2]
       coordinatedat$uCI[selected] <- result$coordinateCI[, 1]
 
+      try(profile <- optimizeSelected(observed, subCov, threshold,
+                                      projected = mean(signal[selected]),
+                                     stepRate = 0.6,
+                                     stepSizeCoef = 4,
+                                     delay = 10,
+                                     assumeConvergence = 500,
+                                     trimSample = 40,
+                                     maxiter = 2000))
+
       naive <- mean(observed[selected])
+      samp <- profile$sample
+      profMeans <- rowMeans(samp[, selected, drop = FALSE])
+      profPval <- 2 * min(mean(profMeans <= naive), mean(profMeans >= naive))
+
       e <- selected / sum(selected)
       naiveVar <- t(e) %*% subCov %*% e
       naiveSD <- sqrt(naiveVar)
@@ -73,32 +90,38 @@ run.sim <- function(config) {
 
       true <- mean(signal[selected])
       conditional <- mean(conditional[selected])
-      lCI <- c(NA, naiveCI[1], sort(result$meanCI)[1])
-      uCI <- c(NA, naiveCI[2],  sort(result$meanCI)[2])
+      lCI <- c(profPval, naiveCI[1], sort(result$meanCI)[1])
+      uCI <- c(profPval, naiveCI[2],  sort(result$meanCI)[2])
       meanResult <- data.frame(type = c("true", "naive", "conditional"),
                                estimate = c(true, naive, conditional),
                                lCI = lCI, uCI = uCI)
       results[[m]][[3]] <- result
       results[[m]][[1]] <- coordinatedat
       results[[m]][[2]] <- meanResult
+      results[[m]][[4]] <- profPval
 
       print(meanResult)
 
       iterCover <- iterCover + sum(selected) * (meanResult$lCI[3] < true & meanResult$uCI[3] > true)
+      naiveCover <- naiveCover + sum(selected) * (meanResult$lCI[2] < true & meanResult$uCI[2] > true)
+      profCover <- profCover + sum(selected) * (profPval > 0.05)
       weights <- weights + sum(selected)
     }
 
-    simcover[rep] <- sum(iterCover) / sum(weights)
-    print(c(wcover = mean(simcover, na.rm = TRUE)))
+    simcover[rep, 1] <- sum(naiveCover) / sum(weights)
+    simcover[rep, 2] <- sum(iterCover) / sum(weights)
+    simcover[rep, 3] <- sum(profCover) / sum(weights)
+    print(colMeans(simcover[1:rep, , drop = FALSE]))
     simresults[[rep]] <- results
   }
 
   return(simresults)
 }
 
-configurations <- expand.grid(snr = c(1),
-                              rho = 0.7,
+configurations <- expand.grid(snr = c(0.2, 0.8, 0.05),
+                              rho = 0.8,
                               BHlevel = 0.1,
                               replications = 10)
 
+set.seed(502)
 system.time(simResults <- apply(configurations, 1, run.sim))

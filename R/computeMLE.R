@@ -34,8 +34,13 @@ optimizeSelected <- function(y, cov, threshold,
                              maxiter = 4000,
                              assumeConvergence = 2000,
                              CIalpha = 0.05,
-                             init = NULL) {
+                             init = NULL,
+                             probMethod = c("all", "selected", "oneside"),
+                             imputeBoundary = TRUE,
+                             neighbors = NULL) {
   # Basic checks and preliminaries ---------
+  if(length(probMethod) > 1) probMethod <- probMethod[1]
+
   if (is.null(selected)){
     selected <- abs(y) > threshold
   }
@@ -95,12 +100,28 @@ optimizeSelected <- function(y, cov, threshold,
       b[selected] <- Inf
       a[!selected] <- -Inf
       b[!selected] <- threshold[!selected]
-      posProb <- mvtnorm::pmvnorm(a, b, mean = mu, sigma = cov)[[1]]
+      if(probMethod == "selected") {
+        posProb <- mvtnorm::pmvnorm(a[selected], b[selected],
+                                    mean = mu[selected],
+                                    sigma = cov[selected, selected])[[1]]
+      } else if(probMethod == "all") {
+        posProb <- mvtnorm::pmvnorm(a, b, mu, sigma = cov)[[1]]
+      } else if(probMethod == "onesided") {
+        posProb <- as.numeric(sign(y[selected][1]) == 1)
+      }
       a[selected] <- -Inf
       b[selected] <- -threshold[selected]
       a[!selected] <- -threshold[!selected]
       b[!selected] <- Inf
-      negProb <- mvtnorm::pmvnorm(a, b, mean = mu, sigma = cov)[[1]]
+      if(probMethod == "selected") {
+        negProb <- mvtnorm::pmvnorm(a[selected], b[selected],
+                                    mean = mu[selected],
+                                    sigma = cov[selected, selected])[[1]]
+      } else  if(probMethod == "all") {
+        negProb <- mvtnorm::pmvnorm(a, b, mean = mu, sigma = cov)[[1]]
+      } else if(probMethod == "onesided") {
+        negProb <- as.numeric(sign(y[selected][1]) == -1)
+      }
       posProb <- posProb / (posProb + negProb)
     }
 
@@ -166,15 +187,26 @@ optimizeSelected <- function(y, cov, threshold,
     # Updating estimate. The error thing is to make sure we didn't accidently
     # cross the barrier. There might be a better way to do this.
     mu <- mu + gradient
+
+    #### EXPERIMENTAL #######
+    if(imputeBoundary) {
+      if(is.null(neighbors)) {
+        mu[!selected] <- mean(mu[selected])
+      } else {
+        mu[neighbors[, 1]] <- mu[neighbors[, 2]]
+      }
+    }
+    #########################
+
     if(is.null(projected)) {
       mu <- pmin(abs(mu), abs(y)) * sign(y)
     }
     estimates[i,] <- mu
 
     # progress...
-    if((i %% 100) == 0) cat(i, " ", round(mean(mu[selected]), 3), " ")
+    #if((i %% 100) == 0) cat(i, " ", round(mean(mu[selected]), 3), " ")
   }
-  cat("\n")
+  #cat("\n")
 
   if(restarts > 0) {
     warning(paste("Chain restarted", restarts, "times!"))

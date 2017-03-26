@@ -50,14 +50,19 @@ run.sim <- function(config) {
       subCov <- covariance[cluster$row, cluster$row, drop = FALSE]
 
       observed <- coordinates$observed[cluster$row]
+      selected <- coordinates$selected[cluster$row]
+      signal <- coordinates$signal[cluster$row]
+
       result <- NULL
       try(result <- optimizeSelected(observed, subCov, threshold,
-                                 stepRate = 0.6,
-                                 stepSizeCoef = 4,
-                                 delay = 10,
-                                 assumeConvergence = 1000,
-                                 trimSample = 40,
-                                 maxiter = 3000))
+                                      projected = mean(signal[selected]),
+                                      stepRate = 0.6,
+                                      stepSizeCoef = 4,
+                                      delay = 10,
+                                      assumeConvergence = 500,
+                                      trimSample = 80,
+                                      maxiter = 2000,
+                                      init = observed))
       if(is.null(result)) next
       conditional <- result$conditional
       selected <- coordinates$selected[cluster$row]
@@ -76,7 +81,8 @@ run.sim <- function(config) {
                                      delay = 10,
                                      assumeConvergence = 500,
                                      trimSample = 40,
-                                     maxiter = 2000))
+                                     maxiter = 2000,
+                                     init = observed))
 
       naive <- mean(observed[selected])
       samp <- profile$sample
@@ -95,22 +101,22 @@ run.sim <- function(config) {
       meanResult <- data.frame(type = c("true", "naive", "conditional"),
                                estimate = c(true, naive, conditional),
                                lCI = lCI, uCI = uCI)
-      results[[m]][[3]] <- result
-      results[[m]][[1]] <- coordinatedat
+      results[[m]][[1]] <- c(snr = snr, rho = rho, BHlevel = BHlevel, size = sum(selected))
       results[[m]][[2]] <- meanResult
-      results[[m]][[4]] <- profPval
 
       print(meanResult)
 
-      iterCover <- iterCover + sum(selected) * (meanResult$lCI[3] < true & meanResult$uCI[3] > true)
-      naiveCover <- naiveCover + sum(selected) * (meanResult$lCI[2] < true & meanResult$uCI[2] > true)
-      profCover <- profCover + sum(selected) * (profPval > 0.05)
-      weights <- weights + sum(selected)
+      weight <- 1
+      iterCover <- iterCover + weight * (meanResult$lCI[3] < true & meanResult$uCI[3] > true)
+      naiveCover <- naiveCover + weight * (meanResult$lCI[2] < true & meanResult$uCI[2] > true)
+      profCover <- profCover + weight * (profPval > 0.05)
+      weights <- weights + weight
     }
 
     simcover[rep, 1] <- sum(naiveCover) / sum(weights)
     simcover[rep, 2] <- sum(iterCover) / sum(weights)
     simcover[rep, 3] <- sum(profCover) / sum(weights)
+    print(c(itermle = iterCover, iternaive = naiveCover, iterprof = profCover) / weights)
     print(colMeans(simcover[1:rep, , drop = FALSE]))
     simresults[[rep]] <- results
   }
@@ -118,10 +124,11 @@ run.sim <- function(config) {
   return(simresults)
 }
 
-configurations <- expand.grid(snr = c(0.2, 0.8, 0.05),
-                              rho = 0.8,
+configurations <- expand.grid(snr = c(0.8, 0.05, 0.2),
+                              rho = c(0.5, 0.75),
                               BHlevel = 0.1,
-                              replications = 10)
+                              replications = 50)
 
-set.seed(502)
+set.seed(500)
 system.time(simResults <- apply(configurations, 1, run.sim))
+save(simResults, file = "simulations/results/Mar 23.Robj")

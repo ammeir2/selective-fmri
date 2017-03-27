@@ -1,5 +1,7 @@
 
-#### 
+require('MASS')
+
+####
 #
 #sampParams = setSamplingParameters(na=19, nb = 17, sig = diag(3) *0.04, mudiff=0.3)
 #
@@ -9,7 +11,7 @@ setSamplingParameters = function(na,sig, nb = NULL, sigb = NULL, mudiff, conditi
   # mudiff is mean difference between group a and group b
   # we set the mean of group b to 0, and group a is mudiff
 
-  # Fill in group b with defaults 
+  # Fill in group b with defaults
   if (is.null(nb)) { nb = na}
   if (is.null(sigb)) { sigb = sig }
   stopifnot(ncol(sig)==ncol(sigb))
@@ -18,9 +20,9 @@ setSamplingParameters = function(na,sig, nb = NULL, sigb = NULL, mudiff, conditi
   d = ncol(sig)
   if (length(mudiff) == 1){ mudiff = rep(mudiff,d) }
   stopifnot(length(mudiff) == d )
-  
+
   # set param structure
-  sampParam = list(na = na, nb = nb, sig = sig, sigb = sigb, mudiff = mudiff,d = ncol(sig), 
+  sampParam = list(na = na, nb = nb, sig = sig, sigb = sigb, mudiff = mudiff,d = ncol(sig),
                    conditioning = conditioning)
   return(sampParam)
 }
@@ -30,17 +32,17 @@ setSamplingParameters = function(na,sig, nb = NULL, sigb = NULL, mudiff, conditi
 # sampP = setSamplingParameters(na=20, sig = diag(3) *0.04, mudiff=0.3)
 # condSample(B = 500, sP = sampP,thresh=0.5)
 condSample = function(B,sP, thresh, returndat = FALSE){
-  
+
   # The Y matrix is the full data matrix
   # Y_a are samples for group a, Y_b for group b
   # Z is the mean-difference vector
-  # cond means conditional on thresholding. 
+  # cond means conditional on thresholding.
   # sP$conditioning is a vector: conditioning[i] = 1 means Z[i]>thresh
   #                           conditioning[i] = -1 means Z[i] < thresh
   #                           conditioning[i] = 0 means Z[i] no condition
   #              it is checked using all((conditioning * Z) >= (conditioning * thresh)
-  
-  # Simulate the conditional distribution 
+
+  # Simulate the conditional distribution
 
   groups = rep(c(1,0),times = c(sP$na,sP$nb))
 
@@ -58,7 +60,7 @@ condSample = function(B,sP, thresh, returndat = FALSE){
     conditioning = sP$conditioning
   }
   stopifnot(is.element(length(conditioning), c(1, sP$d)))
-  
+
   B_i = 0   # counter passed conditioning
   i = 0     # global counter
   while(B_i<B){
@@ -71,7 +73,7 @@ condSample = function(B,sP, thresh, returndat = FALSE){
     check_cond = all(Z*conditioning >= thresh * conditioning)
     if (check_cond) {
       B_i = B_i + 1
-      condZ[B_i,] = Z 
+      condZ[B_i,] = Z
       if (returndat){
         condY[,,B_i] = rbind(Y_a, Y_b)
       }

@@ -8,7 +8,9 @@ output: pdf_document
 
 Number of cores:
 ```{r}
+source('../simulations/simFuncs.R')
 library('parallel')
+library('selectivefmri')
 useCores = 2
 
 ```
@@ -19,11 +21,11 @@ Set sampling parameters: threshold, group-sizes, avg difference, covariances
 ```{r}
 # set threshold
 thresh = 0.08   # threshold
-grp_size = c(4,8,16)  # group size (and variance)
-mu_size = 0:20 *0.02 # Set avg difference between groups
+grp_size = c(16,8,4)  # group size (and variance)
+mu_size = 0:10 *0.02 # Set avg difference between groups
 
 # Set shape of external differences
-mu_shape = matrix(nr = 2, c(c(0.5,rep(1,3), 0.5), c(0,rep(1,3), 0))) 
+mu_shape = matrix(nr = 2, byrow = TRUE, c(c(0.5,rep(1,3), 0.5), c(0,rep(1,3), 0))) 
 
 # Set covariance 
 sigCov = list()
@@ -35,12 +37,35 @@ sigCov[[1]] = matrix(c(0.04, 0.02, 0.006, 0.0, 0.0,
 sigCov[[2]] = diag(5)*0.04
 
 # Set whether covariance is known
-sigKnown = c(TRUE, FALSE)
+sigKnown = c(TRUE) #c(TRUE, FALSE)
+```
+
+```{r}
+tmp = getwd()
+source('~/gits/bumps/regionInference.R',chdir = TRUE)
+CIparams = setCIparams(alpha=0.05, m_values= seq(-0.2,0.7,0.005),
+                        nsamp = 15000,searchstep = 0.01)
+
+confFunc = function(x,samp, sampParams, Sigma, cond_vec){ 
+  confInt = NULL;
+
+  try(confInt <- regionConfInt(samp[[x]]$condY[,,1], 
+                                    samp[[x]]$groups,
+                                    threshold = thresh, Sigma = Sigma, 
+                                    CIparams = CIparams,
+                                    tilt = TRUE,
+                                    external_mu_val = NULL,
+                                    conditioning = cond_vec)); 
+  return(confInt)
+}
+
+
 ```
 
 How many experiments are we running?
 ```{r}
-ntests = 1000
+set.seed(100)
+ntests =20
 n_musize = length(mu_size)
 n_grps = length(grp_size)
 n_shapes = nrow(mu_shape)
@@ -51,20 +76,20 @@ n_exp = prod(c(n_musize,n_grps,n_shapes,n_sigs,n_known))
 
 samples = list()
 confInts = list()
-
+confIntsMLE = list()
 i_exp = 0
-
+tt = proc.time()
 for (grp_i in 1:n_grps){
   for (musize_i in 1:n_musize){
     for (shape_i in 1:n_shapes){
       for (sig_i in 1:n_sigs){
         # Parameters needed to generate the sample...
         dat_ind = (grp_i-1)*n_musize*n_shapes*n_sigs+
-                  ((theta_type-1)*n_shapes*n_sigs)+ (shape_i-1)*n_shapes+sig_i 
+                  ((musize_i-1)*n_shapes*n_sigs)+ (shape_i-1)*n_shapes+sig_i 
         mu_vec = mu_shape[shape_i,]*mu_size[musize_i]
-        sampParams = setSamplingParameters(na=ns[grp_i], nb = ns[grp_i], 
+        sampParams = setSamplingParameters(na=grp_size[grp_i], nb = grp_size[grp_i], 
                                            mudiff=mu_vec,
-                                           sig = sigCorrel[[sig_i]],
+                                           sig = sigCov[[sig_i]],
                                            conditioning = c(-1,1,1,1,-1))
         # Generate Data
         set.seed(dat_ind)
@@ -75,13 +100,34 @@ for (grp_i in 1:n_grps){
         # Make inference
         for (known_i in n_known) {
           useSig = NULL
-          if (sigKnown[known_type]==1) {
+          if (sigKnown[known_i]==1) {
             useSig = diffCov(sampParams$sig, samples[[dat_ind]][[1]]$groups)
           }
           i_exp = i_exp + 1   
           
           ### Here is where we put the inference function
-#         confInts[[i_exp]] = mclapply(1:ntests, confFunc, 
+          
+          confIntsMLE[[i_exp]]=list()
+          confInts[[i_exp]]=list()
+          for(i in 1:ntests){
+            
+            tmp_res = optimizeSelected(as.numeric(samples[[dat_ind]][[i]]$condZ),
+                                     useSig, thresh,
+                                     selected = c(FALSE,TRUE,TRUE,TRUE,FALSE),
+                                     stepRate = 0.6,
+                                     delay = 100,
+                                     assumeConvergence = 3000,
+                                     trimSample = 100,
+                                     maxiter = 7000)
+            confIntsMLE[[i_exp]][[i]] = tmp_res[c('meanCI','coordinateCI','conditional')]
+            confInts[[i_exp]][[i]] = confFunc(i, samp = samples[[dat_ind]],
+                                              sampParams = sampParams, 
+                                              Sigma = useSig, 
+                                              cond_vec = c(-1,1,1,1,-1))
+          }
+
+          
+#          confInts[[i_exp]] = mclapply(1:ntests, confFunc, 
 #                                         samp = samples_b[[dat_ind]], 
 #                                         sampParams = sampParams, 
 #                                         Sigma = useSig,
@@ -93,8 +139,66 @@ for (grp_i in 1:n_grps){
         cat(".")
       }
     }
+    cat(musize_i, proc.time()-tt)
   }
 }
+```
+
+
+
+```{r}
+
+annot = matrix(nc = 4, nr = prod(c(n_grps, n_musize,n_shapes,n_sigs)))
+annot_arr = array(dim = c(n_grps, n_musize,n_shapes,n_sigs))
+res_n16 = array(0,dim = c(20,n_musize, n_shapes, n_sigs))
+res_n16_mle = array(0,dim = c(20,n_musize, n_shapes, n_sigs))
+res_n16_est = array(0,dim = c(20,n_musize, n_shapes, n_sigs))
+res_n16_mle_est = array(0,dim = c(20,n_musize, n_shapes, n_sigs))
+
+i = 0
+for (grp_i in 1:1){
+  for (musize_i in 1:n_musize){
+    for (shape_i in 1:n_shapes){
+      for (sig_i in 1:n_sigs){
+        i = i + 1
+        annot[i,] = c(grp_i, musize_i, shape_i, sig_i)
+        annot_arr[grp_i, musize_i, shape_i, sig_i] = i
+        res_n16_mle[, musize_i, shape_i, sig_i] = 
+          sapply(1:20, function(i){ 
+            sum(mu_size[musize_i] 
+                >=confIntsMLE[[annot_arr[1,musize_i,shape_i,sig_i]]][[i]]$meanCI)})
+        res_n16_mle_est[, musize_i, shape_i, sig_i] = 
+          sapply(1:20, function(i){
+            mu_size[musize_i] - mean(confIntsMLE[[annot_arr[1,musize_i,shape_i,sig_i]]][[i]]$conditional[2:4])})
+        res_n16[, musize_i, shape_i, sig_i] = 
+          sapply(1:20, function(i){ 
+            sum(mu_size[musize_i]  >= 
+               confInts[[annot_arr[1,musize_i,shape_i,sig_i]]][[i]][c('upper_bound','lower_bound')])})
+        res_n16_est[, musize_i, shape_i, sig_i] = 
+          sapply(1:20, function(i){
+            mu_size[musize_i] - confInts[[annot_arr[1,musize_i,shape_i,sig_i]]][[i]]$cond_mean_est})
+        
+      }
+    }
+  }
+}
+  
+par(mfcol = c(2,1))
+plot(mu_size,colMeans(abs(res_n16_est))[,1,1],col=0,ylim = c(0,0.09), main="Estimation error (abs-distance)")
+lines(mu_size,colMeans(abs(res_n16_est))[,1,1],col=2,lw=3)
+lines(mu_size,colMeans(abs(res_n16_est))[,1,2],col=2,lw=3,lt=2)
+lines(mu_size,colMeans(abs(res_n16_mle_est))[,1,1],col=3,lw=3)
+lines(mu_size,colMeans(abs(res_n16_mle_est))[,1,2],col=3,lw=3,lt=2)
+
+plot(mu_size,colMeans((res_n16==1))[,1,1],col=0,ylim = c(0,1), main= "Coverage probability")
+lines(mu_size,colMeans((res_n16==1))[,1,1],col=2,lw=3)
+lines(mu_size,colMeans((res_n16==1))[,1,2],col=2,lw=3,lt=2)
+lines(mu_size,colMeans((res_n16_mle==1))[,1,1],col=3,lw=3)
+lines(mu_size,colMeans((res_n16_mle==1))[,1,2],col=3,lw=3,lt=2)
+abline(h = 0.95)
+
+
+        
 ```
 
 

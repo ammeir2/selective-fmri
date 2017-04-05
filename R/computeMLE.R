@@ -35,7 +35,7 @@ optimizeSelected <- function(y, cov, threshold,
                              assumeConvergence = 2000,
                              CIalpha = 0.05,
                              init = NULL,
-                             probMethod = c("all", "selected", "oneside"),
+                             probMethod = c("all", "selected", "onesided"),
                              imputeBoundary = TRUE,
                              neighbors = NULL) {
   # Basic checks and preliminaries ---------

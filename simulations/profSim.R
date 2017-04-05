@@ -59,43 +59,47 @@ run.sim <- function(config) {
       print(c(round(m / length(clusters), 2), nrow(cluster)))
       subCov <- covariance[cluster$row, cluster$row, drop = FALSE]
 
-      result <- NULL
-      try(result <- optimizeSelected(observed, subCov, threshold,
-                                      projected = mean(signal[selected]),
-                                      stepRate = 0.6,
-                                      stepSizeCoef = 0,
-                                      delay = 1,
-                                      assumeConvergence = 1,
-                                      trimSample = 50,
-                                      maxiter = 2000,
-                                     probMethod = "all",
-                                      init = signal,
-                                     imputeBoundary = FALSE))
-      if(is.null(result)) next
-      naive <- mean(observed[selected])
-      samp <- result$sample
-      profMeans <- rowMeans(samp[, selected, drop = FALSE])
-      betterPval <- 2 * min(mean(naive < profMeans), mean(naive > profMeans))
-      # if(naive > 0) {
-      #   betterPval <- mean(naive < profMeans)
-      # } else {
-      #   betterPval <- mean(naive > profMeans)
-      # }
-
       unselected <- which(!selected)
       distances <- as.matrix(dist(cluster[, 1:3]))
       diag(distances) <- Inf
       neighbors <- cbind(unselected, apply(distances[unselected, ], 1, function(x) which(selected)[which.min(x[selected])[1]]))
 
+      result <- NULL
+      try(result <- optimizeSelected(observed, subCov, threshold,
+                                      projected = 0,
+                                      stepRate = 0.6,
+                                     quadraticSlack = 3,
+                                      stepSizeCoef = 4,
+                                      delay = 1,
+                                      assumeConvergence = 500,
+                                      trimSample = 50,
+                                      maxiter = 2500,
+                                     probMethod = "onesided",
+                                      init = observed,
+                                     imputeBoundary = TRUE,
+                                     neighbors = neighbors))
+      if(is.null(result)) next
+      naive <- mean(observed[selected])
+      samp <- result$sample
+      profMeans <- rowMeans(samp[, selected, drop = FALSE])
+      betterPval <- 2 * min(mean(naive < profMeans), mean(naive > profMeans))
+      if(naive > 0) {
+        betterPval <- mean(naive < profMeans)
+      } else {
+        betterPval <- mean(naive > profMeans)
+      }
+
+
       try(profile <- optimizeSelected(observed, subCov, threshold,
                                       projected = mean(signal[selected]),
                                      stepRate = 0.6,
+                                     quadraticSlack = 3,
                                      stepSizeCoef = 4,
                                      delay = 1,
                                      assumeConvergence = 500,
                                      trimSample = 50,
                                      maxiter = 2500,
-                                     probMethod = "selected",
+                                     probMethod = "onesided",
                                      init = observed,
                                      imputeBoundary = TRUE,
                                      neighbors = neighbors))
@@ -103,23 +107,30 @@ run.sim <- function(config) {
       samp <- profile$sample
       profMeans <- rowMeans(samp[, selected, drop = FALSE])
       profPval <- 2 * min(mean(naive < profMeans), mean(naive > profMeans))
-      # if(naive > 0) {
-      #   profPval <- mean(naive < profMeans)
-      # } else {
-      #   profPval <- mean(naive > profMeans)
-      # }
+      if(naive > 0) {
+        profPval <- mean(naive < profMeans)
+      } else {
+        profPval <- mean(naive > profMeans)
+      }
 
       true <- mean(signal[selected])
-      profResult <- c(profPVAL = profPval, betterPVAL = betterPval)
+      profResult <- c(true = mean(signal[selected]), profPVAL = profPval, betterPVAL = betterPval)
       results[[m]][[1]] <- c(snr = snr, rho = rho, BHlevel = BHlevel, size = sum(selected))
       results[[m]][[2]] <- profResult
 
       print(profResult)
 
       weight <- 1
-      iterCover <- iterCover + weight * (betterPval > 0.05)
+      iterCover <- iterCover + weight * (betterPval < 0.05)
       profCover <- profCover + weight * (profPval > 0.05)
       weights <- weights + weight
+
+      plot(density((rowMeans(profile$sample[, selected]))), xlim = c(-4.5, 4.5))
+      abline(v = mean(profile$conditional[selected]))
+      abline(v = mean(result$conditional[selected]), col = "blue")
+      abline(v = naive, col = "red")
+      lines(density((rowMeans(result$sample[, selected]))), col = "blue")
+      abline(v = c(threshold, - threshold), col = "grey")
     }
 
     simcover[rep, 1] <- sum(profCover) / sum(weights)
@@ -132,14 +143,17 @@ run.sim <- function(config) {
   return(simresults)
 }
 
-configurations <- expand.grid(snr = c(0.5, 0.25, 0.1),
+configurations <- expand.grid(snr = c(2, 0.5, 0.25),
                               rho = c(0.5, 0.75),
                               BHlevel = 0.1,
                               replications = 50)
 
 set.seed(502)
 system.time(simResults <- apply(configurations, 1, run.sim))
-save(simResults, file = "simulations/results/Mar 26C.Robj")
+save(simResults, file = "simulations/results/Mar 27 oneside w power.Robj")
+
+# One sided  w oracle --- load(file = "simulations/results/Mar 27.Robj")
+# Two Sided  w oracle --- load(file = "simulations/results/Mar 26D.Robj")
 
 # Processing ------------------------
 library(ggplot2)
@@ -178,3 +192,4 @@ ggplot(cover) +
   geom_point(data = meancover, aes(x = method, y = cover, col = weight),
              size = 3, alpha = 0.5)
 
+subset(data.frame(meancover), weight == "unweighted")

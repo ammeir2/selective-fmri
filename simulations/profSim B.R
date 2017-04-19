@@ -1,4 +1,4 @@
-library(selective-fmri)
+#library(selective-fmri)
 run.sim <- function(config) {
   snr <- config[[1]]
   rho <- config[[2]]
@@ -70,10 +70,10 @@ run.sim <- function(config) {
                                      tykohonovSlack = 0.00001,
                                       stepSizeCoef = 0,
                                       delay = 1,
-                                      assumeConvergence = 1,
+                                      assumeConvergence = 2,
                                       trimSample = 50,
                                       maxiter = 2500,
-                                     probMethod = "onesided",
+                                     probMethod = "all",
                                       init = rep(0, length(observed)),
                                      imputeBoundary = "neighbors"))
       if(is.null(result)) next
@@ -81,11 +81,11 @@ run.sim <- function(config) {
       samp <- result$sample
       profMeans <- rowMeans(samp[, selected, drop = FALSE])
       betterPval <- 2 * min(mean(naive < profMeans), mean(naive > profMeans))
-      if(naive > 0) {
-        betterPval <- mean(naive < profMeans)
-      } else {
-        betterPval <- mean(naive > profMeans)
-      }
+      # if(naive > 0) {
+      #   betterPval <- mean(naive < profMeans)
+      # } else {
+      #   betterPval <- mean(naive > profMeans)
+      # }
 
       obsratio <- abs(mean(observed[selected]) / mean(signal[selected]))
       try(profile <- optimizeSelected(observed, subCov, threshold,
@@ -100,18 +100,18 @@ run.sim <- function(config) {
                                      assumeConvergence = 500,
                                      trimSample = 50,
                                      maxiter = 2500,
-                                     probMethod = "onesided",
+                                     probMethod = "all",
                                      init = observed,
                                      imputeBoundary = "neighbors"))
 
       samp <- profile$sample
       profMeans <- rowMeans(samp[, selected, drop = FALSE])
       profPval <- 2 * min(mean(naive < profMeans), mean(naive > profMeans))
-      if(naive > 0) {
-        profPval <- mean(naive < profMeans)
-      } else {
-        profPval <- mean(naive > profMeans)
-      }
+      # if(naive > 0) {
+      #   profPval <- mean(naive < profMeans)
+      # } else {
+      #   profPval <- mean(naive > profMeans)
+      # }
 
       true <- mean(signal[selected])
       profResult <- c(true = mean(signal[selected]), profPVAL = profPval, betterPVAL = betterPval)
@@ -146,19 +146,12 @@ run.sim <- function(config) {
 configurations <- expand.grid(snr = c(0.5, 0.25, 0.1),
                               rho = c(0.5, 0.75),
                               BHlevel = 0.1,
-                              replications = 100)
+                              replications = 50)
 
 #set.seed(510)
 system.time(simResults <- apply(configurations, 1, run.sim))
-#save(simResults, file = "simulations/results/Apr 17B onesided w power.Robj")
-
-load(file = "simulations/results/Apr 17 onesided w power.Robj")
-simResults17 <- simResults
-load(file = "simulations/results/Apr 17B onesided w power.Robj")
-simResults17B <- simResults
-
-simResults <- c(simResults17, simResults17B)
-
+save(simResults, file = "simulations/results/Apr 18 twosided w power.Robj")
+#load(file = "simulations/results/Apr 17 twosided w power.Robj")
 
 # Processing ------------------------
 library(ggplot2)

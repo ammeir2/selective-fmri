@@ -1,3 +1,100 @@
+# Construct second differences Tykohonov Regularization matrix
+computeTykohonov <- function(selected, coordinates) {
+  coordinates <- coordinates[selected, , drop = FALSE]
+  if(nrow(coordinates) == 1) return(matrix(0))
+
+  distances <- as.matrix(dist(coordinates), method = "manhattan")
+  diag(distances) <- Inf
+
+  dims <- ncol(coordinates)
+  p <- sum(selected)
+
+  firstDiff <- matrix(0, nrow = p * 3 * 2, ncol = 3)
+  secondDiff <- matrix(0, nrow = p * 3 * 3, ncol = 3)
+  fsparseRow <- 1
+  frow <- 1
+  ssparseRow <- 1
+  srow <- 1
+  for(i in 1:nrow(coordinates)) {
+    candidates <- distances[i, ] == 1
+    scandidates <- distances[i, ] == 2
+    for(j in 1:dims) {
+      neighbor <- (1:nrow(coordinates))[candidates][which(coordinates[i, j] - coordinates[candidates, j] == - 1)]
+      if(length(neighbor) == 0) {
+        next
+      }
+      firstDiff[fsparseRow, ] <- c(frow, neighbor, -1)
+      fsparseRow <- fsparseRow + 1
+      firstDiff[fsparseRow, ] <- c(frow, i, 1)
+      fsparseRow <- fsparseRow + 1
+      frow <- frow + 1
+
+      if(length(scandidates) == 0) next
+      sneighbor <- (1:nrow(coordinates))[scandidates][which(coordinates[i, j] - coordinates[scandidates, j] == - 2)]
+      if(length(sneighbor) == 0) {
+        next
+      }
+
+      secondDiff[ssparseRow, ] <- c(srow, sneighbor, 1)
+      ssparseRow <- ssparseRow + 1
+      secondDiff[ssparseRow, ] <- c(srow, neighbor, -2)
+      ssparseRow <- ssparseRow + 1
+      secondDiff[ssparseRow, ] <- c(srow, i, 1)
+      ssparseRow <- ssparseRow + 1
+      srow <- srow + 1
+    }
+  }
+
+  firstDiff <- firstDiff[firstDiff[, 1] != 0, ]
+  firstDiff <- Matrix::sparseMatrix(i = firstDiff[, 1], j = firstDiff[, 2], x = firstDiff[, 3])
+  secondDiff <- secondDiff[secondDiff[, 2] != 0, ]
+  if(length(secondDiff) == 0) {
+    secondDiff <- Matrix::sparseMatrix(i = p, j = p, x = 0)
+  } else {
+    if(max(secondDiff[, 1]) < p | max(secondDiff[, 2] <p)) {
+      secondDiff <- rbind(secondDiff, c(p, p, 0))
+    }
+    secondDiff <- Matrix::sparseMatrix(i = secondDiff[, 1], j = secondDiff[, 2], x = secondDiff[, 3])
+  }
+  return(list(firstDiff = firstDiff, secondDiff = secondDiff))
+}
+
+adjustTykohonov <- function(obsDiff, mu, selected,
+                            firstDiff, secondDiff,
+                            tykohonvSlack, tykohonovParam) {
+  mu <- mu[selected]
+  for(i in 1:2) {
+    if(tykohonovParam[i] == 0) next
+
+    if(i == 1) {
+      muDiff <- crossprod(mu, crossprod(firstDiff, mu))
+    } else {
+      muDiff <- crossprod(mu, crossprod(secondDiff, mu))
+    }
+
+    # if(i == 1 & any(sign(mu[1]) != sign(mu)) & mean(mu) > 0.5) {
+    #   tykohonovParam[i] <- tykohonovParam[i] * 1.1
+    #   next
+    # }
+
+    ratio <- muDiff / (obsDiff[i] * tykohonvSlack)
+    #if(i == 2) print(c(ratio, muDiff, obsDiff[i]))
+    if(is.nan(ratio)) {
+      tykohonovParam[i] <- Inf
+    } else if(ratio > 2) {
+      tykohonovParam[i] <- tykohonovParam[i] * 1.3
+    } else if(ratio > 1) {
+      tykohonovParam[i] <- tykohonovParam[i] * 1.05
+    } else if(ratio < 0.5) {
+      tykohonovParam[i] <- tykohonovParam[i] * 0.7
+    } else if(ratio < 1) {
+      tykohonovParam[i] * 0.95
+    }
+  }
+
+  return(tykohonovParam)
+}
+
 # y = vector of observations
 # cov = covariance estimate
 # threshold = a single threshold for all observations, selection event is y > threshold | y < threshold.
@@ -22,22 +119,23 @@
 # coordinateCI - confidence intervals for the coordinates
 # meanCI - CI for the mean
 optimizeSelected <- function(y, cov, threshold,
+                             coordinates = NULL,
                              selected = NULL,
                              projected = NULL,
-                             quadraticSlack = 0.1,
-                             barrierCoef = 0.5,
+                             tykohonovParam = NULL,
+                             tykohonovSlack = Inf,
+                             barrierCoef = 0.1,
                              stepSizeCoef = 0.25,
                              stepRate = 0.65,
                              trimSample = 40,
-                             lambdaStart = 0,
                              delay = 100,
                              maxiter = 4000,
                              assumeConvergence = 2000,
                              CIalpha = 0.05,
                              init = NULL,
                              probMethod = c("all", "selected", "onesided"),
-                             imputeBoundary = TRUE,
-                             neighbors = NULL) {
+                             imputeBoundary = c("none", "mean", "neighbors")) {
+  quadraticSlack <- 10^3
   # Basic checks and preliminaries ---------
   if(length(probMethod) > 1) probMethod <- probMethod[1]
 
@@ -48,6 +146,44 @@ optimizeSelected <- function(y, cov, threshold,
   p <- length(y)
   s <- sum(selected)
   if(!all(sign(y[selected]) == sign(y[selected][1]))) stop("Signs of active set must be identical")
+
+  # Setting up boundary imputation
+  if(length(imputeBoundary) > 1) imputeBoundary <- imputeBoundary[1]
+  if(imputeBoundary == "neighbors") {
+    if(is.null(coordinates)) {
+      imputeBoundary <- "mean"
+    } else {
+      unselected <- which(!selected)
+      distances <- as.matrix(dist(coordinates))
+      diag(distances) <- Inf
+      neighbors <- cbind(unselected, apply(distances[unselected, ], 1, function(x) which(selected)[which.min(x[selected])[1]]))
+    }
+  }
+
+  # Setting-up Tykohonov regularization
+  if(is.infinite(tykohonovSlack) | sum(selected) <= 1) {
+    tykohonovParam <- rep(0, 2)
+  } else if(is.null(tykohonovParam)) {
+    tykohonovParam <- rep(1, 2)
+  } else if(any(tykohonovParam < 0)) {
+    tykohonovParam <- c(1, 2)
+  } else if(is.null(coordinates)) {
+    tykohonovSlack <- Inf
+    tykohonovParam <- rep(0, 2)
+  } else if(length(tykohonovParam) == 1) {
+      tykohonovParam <- rep(tykohonovParam, 2)
+  } else {
+    tykohonovParam <- tykohonovParam[1:2]
+  }
+
+  if(any(tykohonovParam > 0)) {
+    tykMat <- computeTykohonov(selected, coordinates)
+    firstDiff <- tykMat$firstDiff
+    firstDiff <- as.matrix(Matrix::t(firstDiff) %*% firstDiff)
+    secondDiff <- tykMat$secondDiff
+    secondDiff <- as.matrix(Matrix::t(secondDiff) %*% secondDiff)
+    if(all(secondDiff == 0)) tykohonovParam[2] <- 0
+  }
 
   vars <- diag(cov)
   cov <- cov2cor(cov)
@@ -80,16 +216,20 @@ optimizeSelected <- function(y, cov, threshold,
     ball <- sum(selected * mean(mu[selected])^2) + quadraticSlack
   }
 
+  barrierGrad <- rep(0, length(mu))
   estimates <- matrix(nrow = maxiter, ncol = p)
   sampleMat <- matrix(nrow = maxiter - 1, ncol = length(y))
   estimates[1, ] <- mu
   # initial values for positive/negative Gibbs samplers
   posSamp <- abs(y)
   negSamp <- -abs(y)
-  if(is.null(lambdaStart)) {
-    lambda <- 0
-  } else {
-    lambda <- lambdaStart
+
+  # Initializing Tykohonov Penalization Parameters
+  if(any(tykohonovParam > 0)) {
+    yselected <- y[selected]
+    obsDiff <- rep(NA, 2)
+    obsDiff[1] <- as.numeric(crossprod(yselected, crossprod(firstDiff, yselected)))
+    obsDiff[2] <- as.numeric(crossprod(yselected, crossprod(secondDiff, yselected)))
   }
 
   restarts <- 0
@@ -161,50 +301,73 @@ optimizeSelected <- function(y, cov, threshold,
     }
 
     sampleMat[i - 1, ] <- samp
-    condExp <- as.numeric(invcov %*% samp)
 
-    # Computing barrier part of gradient
-    if(is.null(projected)) {
-      barrierGrad <- (sign(mu) / abs(mean(mu[selected]))) * (barrierCoef / min(max(i - delay, 1), assumeConvergence - delay)) / sum(selected)
-    } else {
-      lambda <- max(lambda + (sum(mu[selected]^2) - ball) * 4, 0)
-      barrierGrad <- - mu * lambda * stepSizeCoef
-    }
+    if(i <= assumeConvergence) {
+      condExp <- as.numeric(invcov %*% samp)
 
-    # Computing gradient and projecting if necessary
-    # The projection of the gradient is simply setting its mean to zero
-    gradient <- (suffStat - condExp + barrierGrad) / max(i - delay, 1) * stepSizeCoef
-    gradient[!selected] <- 0
-    gradsign <- sign(gradient)
-    gradient <- pmin(abs(gradient), 0.05) * gradsign
-    if(!is.null(projected)) {
-      gradient <- gradient * sqrt(vars)
-      gradMean <- mean(gradient[selected])
-      gradient[selected] <- gradient[selected] - gradMean
-      gradient <- gradient / sqrt(vars)
-    }
-
-    # Updating estimate. The error thing is to make sure we didn't accidently
-    # cross the barrier. There might be a better way to do this.
-    mu <- mu + gradient
-
-    #### EXPERIMENTAL #######
-    if(imputeBoundary) {
-      if(is.null(neighbors)) {
-        mu[!selected] <- mean(mu[selected])
+      # Computing barrier/tykhonov part of gradient
+      if(is.null(projected)) {
+        barrierGrad <- (sign(mu) / abs(mean(mu[selected]))) * (barrierCoef / min(max(i - delay, 1), assumeConvergence - delay)) / sum(selected)
       } else {
-        mu[neighbors[, 1]] <- mu[neighbors[, 2]]
+        if(tykohonovParam[1] > 0) {
+          firstGrad <- - as.numeric(firstDiff %*% mu[selected]) * tykohonovParam[1]
+        } else {
+          firstGrad <- 0
+        }
+        if(tykohonovParam[2] > 0) {
+          secondGrad <- - as.numeric(secondDiff %*% mu[selected]) * tykohonovParam[2]
+        } else {
+          secondGrad <- 0
+        }
+        barrierGrad[selected] <- firstGrad + secondGrad
       }
-    }
-    #########################
 
-    if(is.null(projected)) {
-      mu <- pmin(abs(mu), abs(y)) * sign(y)
+      # Computing gradient and projecting if necessary
+      # The projection of the gradient is simply setting its mean to zero
+      gradient <- (suffStat - condExp + barrierGrad) / max(i - delay, 1) * stepSizeCoef
+      gradient[!selected] <- 0
+      gradsign <- sign(gradient)
+      gradient <- pmin(abs(gradient), 0.05) * gradsign
+      if(!is.null(projected)) {
+        gradient <- gradient * sqrt(vars)
+        gradMean <- mean(gradient[selected])
+        gradient[selected] <- gradient[selected] - gradMean
+        gradient <- gradient / sqrt(vars)
+      }
+
+      # Updating estimate. The error thing is to make sure we didn't accidently
+      # cross the barrier. There might be a better way to do this.
+      mu <- mu + gradient
+
+      #### EXPERIMENTAL #######
+      if(imputeBoundary != "none") {
+        if(imputeBoundary == "mean") {
+          mu[!selected] <- mean(mu[selected])
+        } else if(imputeBoundary == "neighbors") {
+          mu[neighbors[, 1]] <- mu[neighbors[, 2]]
+        }
+      }
+      #########################
+
+      if(is.null(projected)) {
+        mu <- pmin(abs(mu), abs(y)) * sign(y)
+      }
+
+      # Updating Tykohonov Params
+      if(any(tykohonovParam > 0)) {
+        tykohonovParam <- adjustTykohonov(obsDiff, mu, selected,
+                                          firstDiff, secondDiff,
+                                          tykohonovSlack, tykohonovParam)
+      }
     }
     estimates[i,] <- mu
 
     # progress...
-    #if((i %% 100) == 0) cat(i, " ", round(mean(mu[selected]), 3), " ")
+    if((i %% 100) == 0) {
+      # cat(i, " ", round(mean(mu[selected]), 3), " ")
+      # print(c(tyk = tykohonovParam))
+      # print(mu[selected])
+    }
   }
   #cat("\n")
 
@@ -247,6 +410,7 @@ optimizeSelected <- function(y, cov, threshold,
   }
   CI <- CI[selected, , drop = FALSE]
 
+  #print(c(tyk = tykohonovParam))
   return(list(sample = sampleMat,
               estimates = estimates,
               conditional = conditional,

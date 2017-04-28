@@ -79,7 +79,9 @@ run.sim <- function(config) {
       if(is.null(result)) next
       naive <- mean(observed[selected])
       samp <- result$sample
-      profMeans <- rowMeans(samp[, selected, drop = FALSE])
+      profMeans <- NULL
+      try(profMeans <- rowMeans(samp[, selected, drop = FALSE]))
+      if(is.null(profMeans)) next
       betterPval <- 2 * min(mean(naive < profMeans), mean(naive > profMeans))
       # if(naive > 0) {
       #   betterPval <- mean(naive < profMeans)
@@ -105,7 +107,9 @@ run.sim <- function(config) {
                                      imputeBoundary = "neighbors"))
 
       samp <- profile$sample
-      profMeans <- rowMeans(samp[, selected, drop = FALSE])
+      profMeans <- NULL
+      try(profMeans <- rowMeans(samp[, selected, drop = FALSE]))
+      if(is.null(profMeans)) next
       profPval <- 2 * min(mean(naive < profMeans), mean(naive > profMeans))
       # if(naive > 0) {
       #   profPval <- mean(naive < profMeans)
@@ -143,14 +147,14 @@ run.sim <- function(config) {
   return(simresults)
 }
 
-configurations <- expand.grid(snr = c(0.5, 0.25, 0.1),
+configurations <- expand.grid(snr = c(1, 0.5, 0.25, 0.1),
                               rho = c(0.5, 0.75),
                               BHlevel = 0.1,
                               replications = 50)
 
 #set.seed(510)
 system.time(simResults <- apply(configurations, 1, run.sim))
-save(simResults, file = "simulations/results/Apr 18 twosided w power.Robj")
+#save(simResults, file = "simulations/results/Apr 18 twosided w power.Robj")
 #load(file = "simulations/results/Apr 17 twosided w power.Robj")
 
 # Processing ------------------------

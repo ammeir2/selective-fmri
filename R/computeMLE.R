@@ -59,10 +59,11 @@ computeTykohonov <- function(selected, coordinates) {
   return(list(firstDiff = firstDiff, secondDiff = secondDiff))
 }
 
-adjustTykohonov <- function(obsDiff, mu, selected,
+adjustTykohonov <- function(obsDiff, obsmean, mu, selected,
                             firstDiff, secondDiff,
                             tykohonvSlack, tykohonovParam) {
   mu <- mu[selected]
+  meanmu <- mean(mu)
   for(i in 1:2) {
     if(tykohonovParam[i] == 0) next
 
@@ -77,7 +78,7 @@ adjustTykohonov <- function(obsDiff, mu, selected,
     #   next
     # }
 
-    ratio <- muDiff / (obsDiff[i] * tykohonvSlack)
+    ratio <- muDiff / (obsDiff[i] * (tykohonvSlack))
     #if(i == 2) print(c(ratio, muDiff, obsDiff[i]))
     if(is.nan(ratio)) {
       tykohonovParam[i] <- Inf
@@ -123,7 +124,7 @@ optimizeSelected <- function(y, cov, threshold,
                              selected = NULL,
                              projected = NULL,
                              tykohonovParam = NULL,
-                             tykohonovSlack = Inf,
+                             tykohonovSlack = 1,
                              barrierCoef = 0.1,
                              stepSizeCoef = 0.25,
                              stepRate = 0.65,
@@ -135,7 +136,7 @@ optimizeSelected <- function(y, cov, threshold,
                              init = NULL,
                              probMethod = c("all", "selected", "onesided"),
                              imputeBoundary = c("none", "mean", "neighbors")) {
-  quadraticSlack <- 10^3
+  maxiter <- max(maxiter, assumeConvergence + length(y) + 1)
   # Basic checks and preliminaries ---------
   if(length(probMethod) > 1) probMethod <- probMethod[1]
 
@@ -147,7 +148,7 @@ optimizeSelected <- function(y, cov, threshold,
   s <- sum(selected)
   if(!all(sign(y[selected]) == sign(y[selected][1]))) stop("Signs of active set must be identical")
 
-  # Setting up boundary imputation
+  # Setting up boundary imputation ----------
   if(length(imputeBoundary) > 1) imputeBoundary <- imputeBoundary[1]
   if(imputeBoundary == "neighbors") {
     if(is.null(coordinates)) {
@@ -160,7 +161,7 @@ optimizeSelected <- function(y, cov, threshold,
     }
   }
 
-  # Setting-up Tykohonov regularization
+  # Setting-up Tykohonov regularization --------------
   if(is.infinite(tykohonovSlack) | sum(selected) <= 1) {
     tykohonovParam <- rep(0, 2)
   } else if(is.null(tykohonovParam)) {
@@ -203,6 +204,7 @@ optimizeSelected <- function(y, cov, threshold,
   a <- -threshold
   b <- threshold
   signs <- sign(y)
+  obsmean <- mean(y[selected])
 
   # Setting up projection -----------------
   # If a projected gradient method is used then initalization must be from
@@ -216,7 +218,6 @@ optimizeSelected <- function(y, cov, threshold,
     ball <- sum(selected * mean(mu[selected])^2) + quadraticSlack
   }
 
-  barrierGrad <- rep(0, length(mu))
   estimates <- matrix(nrow = maxiter, ncol = p)
   sampleMat <- matrix(nrow = maxiter - 1, ncol = length(y))
   estimates[1, ] <- mu
@@ -233,6 +234,13 @@ optimizeSelected <- function(y, cov, threshold,
   }
 
   restarts <- 0
+  if(!is.null(projected)) {
+    slackAdjusted <- FALSE
+  } else {
+    tykohonovSlack <- tykohonovSlack * mean(mu[selected]) / obsmean
+    slackAdjusted <- TRUE
+  }
+
   for(i in 2:maxiter) {
     # Every now and then recompute probability to be positive/negative
     if((i == 2 | i < (100 + delay) & (i %% 4 == 0)) | (i %% 50 == 0 & i <= assumeConvergence)) {
@@ -268,6 +276,7 @@ optimizeSelected <- function(y, cov, threshold,
     # Sampling sign followed by sampling truncated normal rv
     # we used pass by reference to modify posSamp/negSamp in place.
     sampSign <- - 1 + 2 * rbinom(1, 1, posProb)
+    barrierGrad <- rep(0, length(y))
     if(sampSign == 1) {
       a[selected] <- threshold[selected]
       b[selected] <- Inf
@@ -306,28 +315,24 @@ optimizeSelected <- function(y, cov, threshold,
       condExp <- as.numeric(invcov %*% samp)
 
       # Computing barrier/tykhonov part of gradient
-      if(is.null(projected)) {
-        barrierGrad <- (sign(mu) / abs(mean(mu[selected]))) * (barrierCoef / min(max(i - delay, 1), assumeConvergence - delay)) / sum(selected)
+      if(tykohonovParam[1] > 0) {
+        firstGrad <- - as.numeric(firstDiff %*% mu[selected]) * tykohonovParam[1]
       } else {
-        if(tykohonovParam[1] > 0) {
-          firstGrad <- - as.numeric(firstDiff %*% mu[selected]) * tykohonovParam[1]
-        } else {
-          firstGrad <- 0
-        }
-        if(tykohonovParam[2] > 0) {
-          secondGrad <- - as.numeric(secondDiff %*% mu[selected]) * tykohonovParam[2]
-        } else {
-          secondGrad <- 0
-        }
-        barrierGrad[selected] <- firstGrad + secondGrad
+        firstGrad <- 0
       }
+      if(tykohonovParam[2] > 0) {
+        secondGrad <- - as.numeric(secondDiff %*% mu[selected]) * tykohonovParam[2]
+      } else {
+        secondGrad <- 0
+      }
+      barrierGrad[selected] <- firstGrad + secondGrad
 
       # Computing gradient and projecting if necessary
       # The projection of the gradient is simply setting its mean to zero
       gradient <- (suffStat - condExp + barrierGrad) / max(i - delay, 1) * stepSizeCoef
       gradient[!selected] <- 0
       gradsign <- sign(gradient)
-      gradient <- pmin(abs(gradient), 0.05) * gradsign
+      gradient <- pmin(abs(gradient), 0.1) * gradsign
       if(!is.null(projected)) {
         gradient <- gradient * sqrt(vars)
         gradMean <- mean(gradient[selected])
@@ -354,8 +359,13 @@ optimizeSelected <- function(y, cov, threshold,
       }
 
       # Updating Tykohonov Params
+      if(i > assumeConvergence / 3 & !slackAdjusted) {
+        tykohonovSlack <- tykohonovSlack * mean(mu[selected]) / obsmean
+        slackAdjusted <- TRUE
+      }
+
       if(any(tykohonovParam > 0)) {
-        tykohonovParam <- adjustTykohonov(obsDiff, mu, selected,
+        tykohonovParam <- adjustTykohonov(obsDiff, obsmean, mu, selected,
                                           firstDiff, secondDiff,
                                           tykohonovSlack, tykohonovParam)
       }
@@ -364,6 +374,7 @@ optimizeSelected <- function(y, cov, threshold,
 
     # progress...
     if((i %% 100) == 0) {
+      cat(i, " ")
       # cat(i, " ", round(mean(mu[selected]), 3), " ")
       # print(c(tyk = tykohonovParam))
       # print(mu[selected])

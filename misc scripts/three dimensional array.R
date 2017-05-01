@@ -1,3 +1,4 @@
+
 plotBRAIN <- function(coordinates, column, col = NULL) {
   for(ind in 1:K) {
     temp <- subset(coordinates, k == ind)
@@ -143,12 +144,12 @@ for(m in 1:length(clusters)) {
                                  coordinates = cluster[, 1:3],
                                  tykohonovParam = NULL,
                                  tykohonovSlack = 1,
-                                 stepSizeCoef = 4,
+                                 stepSizeCoef = 1,
                                  delay = 20,
                                  assumeConvergence = 1800,
                                  trimSample = 15,
                                  maxiter = 2000,
-                                 probMethod = "all",
+                                 probMethod = "selected",
                                  init = observed,
                                  imputeBoundary = "neighbors"))
   #print(result$meanCI)

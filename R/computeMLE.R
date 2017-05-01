@@ -285,12 +285,12 @@ optimizeSelected <- function(y, cov, threshold,
       b[selected] <- Inf
       a[!selected] <- -Inf
       b[!selected] <- threshold[!selected]
-      newsamp <- sampleTruncNorm(posSamp, a, b, mu, cov, condSigma, trimSample)
+      newsamp <- sampleTruncNorm(posSamp, a, b, mu, invcov, trimSample)
       attempts <- 0
       while(any(is.nan(newsamp))) {
         restarts <- restarts + 1
         attempts <- attempts + 1
-        newsamp <- sampleTruncNorm(y, a, b, mu, cov, condSigma, 200)
+        newsamp <- sampleTruncNorm(y, a, b, mu, invcov, 200)
         if(attempts > 100) stop("Can't sample truncated normal samples!")
       }
       posSamp <- newsamp
@@ -300,12 +300,12 @@ optimizeSelected <- function(y, cov, threshold,
       b[selected] <- -threshold[selected]
       a[!selected] <- -threshold[!selected]
       b[!selected] <- Inf
-      newsamp <- sampleTruncNorm(negSamp, a, b, mu, cov, condSigma, trimSample)
+      newsamp <- sampleTruncNorm(negSamp, a, b, mu, invcov, trimSample)
       attempts <- 0
       while(any(is.nan(newsamp))) {
         attempts <- attempts + 1
         restarts <- restarts + 1
-        newsamp <- sampleTruncNorm(y, a, b, mu, cov, condSigma, 200)
+        newsamp <- sampleTruncNorm(y, a, b, mu, invcov, 200)
         if(attempts > 100) stop("Can't sample truncated normal samples!")
       }
       negSamp <- newsamp
@@ -355,7 +355,7 @@ optimizeSelected <- function(y, cov, threshold,
       if(imputeBoundary == "mean") {
         mu[!selected] <- mean(mu[selected])
       } else if(imputeBoundary == "neighbors") {
-        mu[neighbors[, 1]] <- mu[neighbors[, 2]]
+        mu[neighbors[, 1]] <- mu[neighbors[, 2]] * (y[neighbors[, 1]] / y[neighbors[, 2]])
       }
     }
     #########################
@@ -379,7 +379,7 @@ optimizeSelected <- function(y, cov, threshold,
 
     # progress...
     if((i %% 100) == 0) {
-       cat(i, " ")
+      cat(i, " ")
       # cat(i, " ", round(mean(mu[selected]), 3), " ")
       # print(c(tyk = tykohonovParam))
       #print(mu[selected])

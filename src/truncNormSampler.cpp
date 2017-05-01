@@ -21,7 +21,8 @@ double sampleExtreme(double mu, double sd, double lower, double upper) {
   alpha = (threshold + std::sqrt(std::pow(threshold, 2) + 4)) / 2 ;
 
   bool reject = true ;
-  while(reject) {
+  int iter = 0;
+  while(reject & (iter++ < 10000)) {
     proposal = threshold + R::rexp(alpha) ;
     phi = std::exp(-std::pow(proposal - alpha, 2) / 2) ;
     if(runif(1)[0] < phi) {
@@ -51,26 +52,35 @@ double sampleUnivTruncNorm(double mu, double sd, double lower, double upper) {
 
 double computeConditionalMean(NumericVector mu,
                               NumericVector samp,
-                              const NumericMatrix sigma,
+                              const NumericMatrix precision,
                               int index) {
   double result = 0 ;
 
   for(int j = 0; j < mu.length() ; j ++) {
     if(j != index) {
-      result += sigma(index, j) * (samp[j] - mu[j]) ;
+      result += precision(index, j) * (samp[j] - mu[j]) ;
     }
   }
 
-  result = result / sigma(index, index) ;
+  result = result / precision(index, index) ;
+  //Rcpp::Rcout<<cor<<" "<<result<<" " ;
   result = mu[index] - result ;
+
+  /// temp
+  if(result > 0) {
+    result = std::min(result, 6.0) ;
+  } else {
+    result = std::max(result, -6.0) ;
+  }
+  ///
+
   return result ;
 }
 
 // [[Rcpp::export]]
 NumericVector sampleTruncNorm(NumericVector sample,
                      NumericVector lower, NumericVector upper,
-                     NumericVector mean, NumericMatrix sigma,
-                     NumericVector condSigma,
+                     NumericVector mean, NumericMatrix precision,
                      int cycles) {
   double condMean ;
   double condSD ;
@@ -79,15 +89,17 @@ NumericVector sampleTruncNorm(NumericVector sample,
 
   for(i = 0; i < cycles ; i++) {
     for(j = 0; j < samp.length() ; j ++) {
-      condMean = computeConditionalMean(mean, samp, sigma, j) ;
-      condSD = std::sqrt(condSigma[j]) ;
+      condMean = computeConditionalMean(mean, samp, precision, j) ;
+      //Rcpp::Rcout<<mean[j]<<" "<<condMean<<"\n" ;
+      condSD = std::sqrt(1 / precision(j, j)) ;
       if((isinf(std::abs(lower[j])) & ((condMean - upper[j]) / condSD) > 3.5) |
          (isinf(std::abs(upper[j])) & ((lower[j] - condMean) / condSD) > 3.5)) {
-        samp[j] = sampleExtreme(condMean, condSD, lower[j], upper[j]) ;
-      } else {
         samp[j] = sampleUnivTruncNorm(condMean, condSD, lower[j], upper[j]) ;
+      } else {
+        samp[j] = sampleExtreme(condMean, condSD, lower[j], upper[j]) ;
       }
     }
+   // Rcpp::Rcout<<samp<<"\n" ;
   }
 
   return samp ;

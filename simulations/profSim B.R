@@ -1,9 +1,10 @@
 #library(selective-fmri)
 run.sim <- function(config) {
   snr <- config[[1]]
-  rho <- config[[2]]
-  BHlevel <- config[[3]]
-  replications <- config[[4]]
+  spread <- config[[2]]
+  rho <- config[[3]]
+  BHlevel <- config[[4]]
+  replications <- config[[5]]
 
   I <- 11
   J <- 11
@@ -23,7 +24,7 @@ run.sim <- function(config) {
     selected <- FALSE
     maxsize <- 0
     while(is.na(maxsize) | maxsize < 2) {
-      coordinates <- generateArrayData3D(dims, sqrtCov, snr)
+      coordinates <- generateArrayData3D(dims, sqrtCov, snr, spread)
       coordinates$zval <- coordinates$observed / sqrt(diag(covariance))
       coordinates$pval <- 2 * pnorm(-abs(coordinates$zval))
       coordinates$qval <- p.adjust(coordinates$pval, method = "BH")
@@ -35,7 +36,7 @@ run.sim <- function(config) {
       }
     }
 
-    print(c(rep = rep, rho = rho, BHlevel = BHlevel, snr = snr))
+    print(c(rep = rep, rho = rho, BHlevel = BHlevel, snr = snr, spread = spread))
     print(c(nselected = sum(selected)))
     sizes <- sapply(clusters, nrow)
     threshold <- qnorm(BHlevel * sum(coordinates$selected) / nrow(coordinates) / 2,
@@ -67,13 +68,13 @@ run.sim <- function(config) {
                                       stepRate = 0.6,
                                       coordinates = cluster[, 1:3],
                                      tykohonovParam = NULL,
-                                     tykohonovSlack = 0.00001,
+                                     tykohonovSlack = 0.0001,
                                       stepSizeCoef = 0,
                                       delay = 1,
-                                      assumeConvergence = 2,
-                                      trimSample = 50,
+                                      assumeConvergence = 1,
+                                      trimSample = 25,
                                       maxiter = 2500,
-                                     probMethod = "all",
+                                     probMethod = "onesided",
                                       init = rep(0, length(observed)),
                                      imputeBoundary = "neighbors"))
       if(is.null(result)) next
@@ -96,13 +97,13 @@ run.sim <- function(config) {
                                      stepRate = 0.6,
                                      coordinates = cluster[, 1:3],
                                      tykohonovParam = NULL,
-                                     tykohonovSlack = min(1, obsratio),
-                                     stepSizeCoef = 4,
+                                     tykohonovSlack = 1,
+                                     stepSizeCoef = 2,
                                      delay = 10,
                                      assumeConvergence = 500,
-                                     trimSample = 50,
+                                     trimSample = 25,
                                      maxiter = 2500,
-                                     probMethod = "all",
+                                     probMethod = "onesided",
                                      init = observed,
                                      imputeBoundary = "neighbors"))
 
@@ -119,7 +120,8 @@ run.sim <- function(config) {
 
       true <- mean(signal[selected])
       profResult <- c(true = mean(signal[selected]), profPVAL = profPval, betterPVAL = betterPval)
-      results[[m]][[1]] <- c(snr = snr, rho = rho, BHlevel = BHlevel, size = sum(selected))
+      results[[m]][[1]] <- c(snr = snr, spread = spread, rho = rho, BHlevel = BHlevel, size = sum(selected),
+                             true = true)
       results[[m]][[2]] <- profResult
 
       print(profResult)
@@ -135,6 +137,9 @@ run.sim <- function(config) {
       abline(v = naive, col = "red")
       lines(density((rowMeans(result$sample[, selected]))), col = "blue")
       abline(v = c(threshold, - threshold), col = "grey")
+      # print(c(threshold, min(abs(profile$sample[-(1:10), selected]))))
+      # print(c(threshold, min(abs(result$sample[-(1:10), selected]))))
+      # fff <- 1
     }
 
     simcover[rep, 1] <- sum(profCover) / sum(weights)
@@ -147,12 +152,13 @@ run.sim <- function(config) {
   return(simresults)
 }
 
-configurations <- expand.grid(snr = c(1, 0.5, 0.25, 0.1),
+configurations <- expand.grid(snr = c(3, 2.5, 2, 1.5, 1),
+                              spread = c(2, 1),
                               rho = c(0.5, 0.75),
                               BHlevel = 0.1,
-                              replications = 50)
+                              replications = 25)
 
-#set.seed(510)
+set.seed(510)
 system.time(simResults <- apply(configurations, 1, run.sim))
 #save(simResults, file = "simulations/results/Apr 18 twosided w power.Robj")
 #load(file = "simulations/results/Apr 17 twosided w power.Robj")
@@ -166,34 +172,36 @@ len <- 1
 for(i in 1:length(simResults)) {
   for(j in 1:length(simResults[[i]])) {
     nonEmpty <- sapply(simResults[[i]][[j]], length) > 0
-    iterResult <- matrix(nrow = sum(nonEmpty), ncol = 8)
+    iterResult <- matrix(nrow = sum(nonEmpty), ncol = 10)
     iterList <- simResults[[i]][[j]]
     row <- 1
     for(k in which(nonEmpty)) {
       iterResult[row, ] <- c(experiment = j,
                              cluster = row,
                              snr = iterList[[k]][[1]][[1]],
-                             rho = iterList[[k]][[1]][[2]],
-                             BHlevel = iterList[[k]][[1]][[3]],
-                             size = iterList[[k]][[1]][[4]],
+                             spread = iterList[[k]][[1]][[2]],
+                             rho = iterList[[k]][[1]][[3]],
+                             BHlevel = iterList[[k]][[1]][[4]],
+                             size = iterList[[k]][[1]][[5]],
+                             true = iterList[[k]][[1]][[6]],
                              pval = iterList[[k]][[2]][[3]],
                              cover = iterList[[k]][[2]][[2]])
       row <- row + 1
     }
     iterResult <- data.frame(iterResult)
-    names(iterResult) <- c("experiment", "cluster", "snr", "rho",
-                           "BHlevel", "size", "pval", "cover")
+    names(iterResult) <- c("experiment", "cluster", "snr", "spread", "rho",
+                           "BHlevel", "size", "true", "pval", "cover")
     resultList[[len]] <- iterResult
     len <- len + 1
   }
 }
 results <- do.call("rbind", resultList)
 
-cover <- summarize(group_by(results, experiment, snr, rho),
+cover <- summarize(group_by(results, experiment, snr, spread, rho),
                    cover = mean(cover > 0.05),
-                   power = mean(pval < 0.05))
-cover <- summarize(group_by(cover, snr, rho),
+                   power = mean(pval[true > 0.05] < 0.05, na.rm = TRUE))
+cover <- summarize(group_by(cover, snr, spread, rho),
                    coversd = sd(cover) / sqrt(length(cover)),
                    cover = mean(cover),
-                   powersd = sd(power) / sqrt(length(power)),
-                   power = mean(power))
+                   powersd = sd(power, na.rm = TRUE) / sqrt(length(power)),
+                   power = mean(power, na.rm = TRUE))

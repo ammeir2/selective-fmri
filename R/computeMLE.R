@@ -91,6 +91,7 @@ adjustTykohonov <- function(obsDiff, obsmean, mu, selected,
     } else if(ratio < 1) {
       tykohonovParam[i] * 0.95
     }
+    tykohonovParam[i] <- min(max(tykohonovParam[i], 10^-6), 10^5)
   }
 
   return(tykohonovParam)
@@ -200,6 +201,7 @@ optimizeSelected <- function(y, cov, threshold,
 
   sds <- sqrt(diag(cov))
   invcov <- solve(cov)
+  condSigma <- 1 / diag(invcov)
   suffStat <- as.numeric(invcov %*% y)
   a <- -threshold
   b <- threshold
@@ -215,11 +217,11 @@ optimizeSelected <- function(y, cov, threshold,
     mu <- mu * sqrt(vars)
     mu[selected] <- rep(projected, sum(selected))
     mu <- mu / sqrt(vars)
-    ball <- sum(selected * mean(mu[selected])^2) + quadraticSlack
   }
 
   estimates <- matrix(nrow = maxiter, ncol = p)
   sampleMat <- matrix(nrow = maxiter - 1, ncol = length(y))
+  gradSamp <- matrix(nrow = maxiter - 1, ncol = sum(selected))
   estimates[1, ] <- mu
   # initial values for positive/negative Gibbs samplers
   posSamp <- abs(y)
@@ -240,6 +242,7 @@ optimizeSelected <- function(y, cov, threshold,
     tykohonovSlack <- tykohonovSlack * mean(mu[selected]) / obsmean
     slackAdjusted <- TRUE
   }
+  tykohonovParam <- pmax(tykohonovParam, 10^-3)
 
   for(i in 2:maxiter) {
     # Every now and then recompute probability to be positive/negative
@@ -282,12 +285,12 @@ optimizeSelected <- function(y, cov, threshold,
       b[selected] <- Inf
       a[!selected] <- -Inf
       b[!selected] <- threshold[!selected]
-      newsamp <- sampleTruncNorm(posSamp, a, b, mu, invcov, trimSample)
+      newsamp <- sampleTruncNorm(posSamp, a, b, mu, cov, condSigma, trimSample)
       attempts <- 0
       while(any(is.nan(newsamp))) {
         restarts <- restarts + 1
         attempts <- attempts + 1
-        newsamp <- sampleTruncNorm(y, a, b, mu, invcov, 200)
+        newsamp <- sampleTruncNorm(y, a, b, mu, cov, condSigma, 200)
         if(attempts > 100) stop("Can't sample truncated normal samples!")
       }
       posSamp <- newsamp
@@ -297,12 +300,12 @@ optimizeSelected <- function(y, cov, threshold,
       b[selected] <- -threshold[selected]
       a[!selected] <- -threshold[!selected]
       b[!selected] <- Inf
-      newsamp <- sampleTruncNorm(negSamp, a, b, mu, invcov, trimSample)
+      newsamp <- sampleTruncNorm(negSamp, a, b, mu, cov, condSigma, trimSample)
       attempts <- 0
       while(any(is.nan(newsamp))) {
         attempts <- attempts + 1
         restarts <- restarts + 1
-        newsamp <- sampleTruncNorm(y, a, b, mu, invcov, 200)
+        newsamp <- sampleTruncNorm(y, a, b, mu, cov, condSigma, 200)
         if(attempts > 100) stop("Can't sample truncated normal samples!")
       }
       negSamp <- newsamp
@@ -311,99 +314,103 @@ optimizeSelected <- function(y, cov, threshold,
 
     sampleMat[i - 1, ] <- samp
 
-    if(i <= assumeConvergence) {
-      condExp <- as.numeric(invcov %*% samp)
+    # Computing gradient ---------------
+    if(i == assumeConvergence) {
+      stepSizeCoef <- 0
+    }
+    condExp <- as.numeric(invcov %*% samp)
+    if(tykohonovParam[1] > 0) {
+      firstGrad <- - as.numeric(firstDiff %*% mu[selected]) * tykohonovParam[1]
+    } else {
+      firstGrad <- 0
+    }
+    if(tykohonovParam[2] > 0) {
+      secondGrad <- - as.numeric(secondDiff %*% mu[selected]) * tykohonovParam[2]
+    } else {
+      secondGrad <- 0
+    }
+    barrierGrad[selected] <- firstGrad + secondGrad
 
-      # Computing barrier/tykhonov part of gradient
-      if(tykohonovParam[1] > 0) {
-        firstGrad <- - as.numeric(firstDiff %*% mu[selected]) * tykohonovParam[1]
-      } else {
-        firstGrad <- 0
-      }
-      if(tykohonovParam[2] > 0) {
-        secondGrad <- - as.numeric(secondDiff %*% mu[selected]) * tykohonovParam[2]
-      } else {
-        secondGrad <- 0
-      }
-      barrierGrad[selected] <- firstGrad + secondGrad
+    # Computing gradient and projecting if necessary
+    # The projection of the gradient is simply setting its mean to zero
+    rawGradient <- (suffStat - condExp + barrierGrad)
+    gradSamp[i - 1, ] <- rawGradient[selected]
+    gradient <-  rawGradient / max(i - delay, 1) * stepSizeCoef
+    gradient[!selected] <- 0
+    gradsign <- sign(gradient)
+    gradient <- pmin(abs(gradient), 0.1) * gradsign
+    if(!is.null(projected)) {
+      gradient <- gradient * sqrt(vars)
+      gradMean <- mean(gradient[selected])
+      gradient[selected] <- gradient[selected] - gradMean
+      gradient <- gradient / sqrt(vars)
+    }
 
-      # Computing gradient and projecting if necessary
-      # The projection of the gradient is simply setting its mean to zero
-      gradient <- (suffStat - condExp + barrierGrad) / max(i - delay, 1) * stepSizeCoef
-      gradient[!selected] <- 0
-      gradsign <- sign(gradient)
-      gradient <- pmin(abs(gradient), 0.1) * gradsign
-      if(!is.null(projected)) {
-        gradient <- gradient * sqrt(vars)
-        gradMean <- mean(gradient[selected])
-        gradient[selected] <- gradient[selected] - gradMean
-        gradient <- gradient / sqrt(vars)
-      }
+    # Updating estimate. The error thing is to make sure we didn't accidently
+    # cross the barrier. There might be a better way to do this.
+    mu <- mu + gradient
 
-      # Updating estimate. The error thing is to make sure we didn't accidently
-      # cross the barrier. There might be a better way to do this.
-      mu <- mu + gradient
-
-      #### EXPERIMENTAL #######
-      if(imputeBoundary != "none") {
-        if(imputeBoundary == "mean") {
-          mu[!selected] <- mean(mu[selected])
-        } else if(imputeBoundary == "neighbors") {
-          mu[neighbors[, 1]] <- mu[neighbors[, 2]]
-        }
+    #### EXPERIMENTAL #######
+    if(imputeBoundary != "none") {
+      if(imputeBoundary == "mean") {
+        mu[!selected] <- mean(mu[selected])
+      } else if(imputeBoundary == "neighbors") {
+        mu[neighbors[, 1]] <- mu[neighbors[, 2]]
       }
-      #########################
+    }
+    #########################
 
-      if(is.null(projected)) {
-        mu <- pmin(abs(mu), abs(y)) * sign(y)
-      }
+    if(is.null(projected)) {
+      mu <- pmin(abs(mu), abs(y)) * sign(y)
+    }
 
-      # Updating Tykohonov Params
-      if(i > assumeConvergence / 3 & !slackAdjusted) {
-        tykohonovSlack <- tykohonovSlack * mean(mu[selected]) / obsmean
-        slackAdjusted <- TRUE
-      }
+    # Updating Tykohonov Params
+    if(i > assumeConvergence / 3 & !slackAdjusted & is.null(projected)) {
+      tykohonovSlack <- pmax(tykohonovSlack * mean(mu[selected]) / obsmean, 10^-3)
+      slackAdjusted <- TRUE
+    }
 
-      if(any(tykohonovParam > 0)) {
-        tykohonovParam <- adjustTykohonov(obsDiff, obsmean, mu, selected,
-                                          firstDiff, secondDiff,
-                                          tykohonovSlack, tykohonovParam)
-      }
+    if(any(tykohonovParam > 0)) {
+      tykohonovParam <- adjustTykohonov(obsDiff, obsmean, mu, selected,
+                                        firstDiff, secondDiff,
+                                        tykohonovSlack, tykohonovParam)
     }
     estimates[i,] <- mu
 
     # progress...
     if((i %% 100) == 0) {
-      cat(i, " ")
+       cat(i, " ")
       # cat(i, " ", round(mean(mu[selected]), 3), " ")
       # print(c(tyk = tykohonovParam))
-      # print(mu[selected])
+      #print(mu[selected])
     }
   }
-  #cat("\n")
+  cat("\n")
 
   if(restarts > 0) {
     warning(paste("Chain restarted", restarts, "times!"))
   }
 
-  # Computations for confidence intervals ---------------------------
-  forQuants <- sampleMat[assumeConvergence:(maxiter - 1), ]
-  forQuants <- forQuants %*% invcov
-  condVar <- var(forQuants)
-  centers <- colMeans(forQuants)
-  barrierDeriv <- 0#(signs / abs(mu)) * (barrierCoef / (assumeConvergence - delay))
-  forQuants <- t(t(forQuants) - centers + barrierDeriv)
-  sandwich <- diag(ncol(forQuants))
-  sandwich[selected, ] <- condVar[selected, ]
-  B <- t(forQuants) %*% forQuants / nrow(forQuants)
-  S <- solve(sandwich)
-  S <- t(S) %*% B %*% S
-  forQuants <- forQuants %*% t(solve(sandwich))
-  ciQuantiles <- apply(forQuants, 2, function(x) quantile(x, c(1 - CIalpha / 2, CIalpha / 2)))
-  ciQuantiles <- t(t(ciQuantiles) * sqrt(vars))
-
-  forQuants <- rowMeans(t(t(forQuants) * sqrt(vars))[, selected, drop = FALSE])
-  meanquantiles <- quantile(forQuants, c(1 - CIalpha / 2, CIalpha / 2))
+  # Computations for confidence intervals
+  forQuants <- gradSamp[(assumeConvergence + 1):(maxiter - 1), , drop = FALSE]
+  if(sum(selected) > 1) {
+    forQuants <- apply(forQuants, 2, function(x) x - mean(x))
+    gradcov <- var(forQuants)
+    invcov <- MASS::ginv(gradcov)
+    forQuants <- forQuants %*% invcov
+    for(i in 1:ncol(forQuants)) {
+      forQuants[, i] <- forQuants[, i] * sqrt(vars[selected][i])
+    }
+    meanquantiles <- quantile(rowMeans(forQuants), c(1 - CIalpha / 2, CIalpha / 2))
+    ciQuantiles <- apply(forQuants, 2, function(x) quantile(x, c(1 - CIalpha / 2, CIalpha / 2)))
+  } else {
+    forQuants <- forQuants - mean(forQuants)
+    gradcov <- var(forQuants)
+    forQuants <- forQuants * 1 / as.numeric(gradcov)
+    forQuants <- forQuants * sqrt(vars[selected])
+    meanquantiles <- quantile(forQuants, c(1 - CIalpha / 2, CIalpha / 2))
+    ciQuantiles <- meanquantiles
+  }
 
   # Unnormalizing estimates and samples --------------------------
   for(i in 1:ncol(sampleMat)) {
@@ -414,12 +421,11 @@ optimizeSelected <- function(y, cov, threshold,
   # Computing estimate and CIs -----------------------------
   conditional <- colMeans(estimates[floor(maxiter * 0.8):maxiter, ])
   meanCI <- mean(conditional[selected]) - meanquantiles
-
-  CI <- matrix(nrow = length(conditional), ncol = 2)
+  ciQuantiles <- apply(forQuants, 2, function(x) quantile(x, c(1 - CIalpha / 2, CIalpha / 2)))
+  CI <- matrix(nrow = sum(selected), ncol = 2)
   for(i in 1:ncol(ciQuantiles)) {
-    CI[i, ] <- conditional[i] - ciQuantiles[, i]
+    CI[i, ] <- conditional[selected][i] - ciQuantiles[, i]
   }
-  CI <- CI[selected, , drop = FALSE]
 
   #print(c(tyk = tykohonovParam))
   return(list(sample = sampleMat,

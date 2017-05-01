@@ -32,7 +32,7 @@ findClusters <- function(coordinates) {
   return(clusters)
 }
 
-generateArrayData3D <- function(dims, sqrtCov, targetSnr) {
+generateArrayData3D <- function(dims, sqrtCov, targetSnr, spread = 1) {
   # parameters + setup
   I <- dims[1]
   J <- dims[2]
@@ -43,19 +43,23 @@ generateArrayData3D <- function(dims, sqrtCov, targetSnr) {
   nnodes <- I * J * K
   coordinates$row <- 1:nrow(coordinates)
 
-  mu <- sapply(c(I, J, K), function(x) rnorm(x))
-  mu <- apply(coordinates, 1, function(x) {
-    sum(mu[[1]][1:x[1]]) + sum(mu[[2]][x[2]:J]) + sum(mu[[3]][1:x[3]])
-  })
-  mu <- mu - mean(mu)
+  # mu <- sapply(c(I, J, K), function(x) rnorm(x))
+  # mu <- apply(coordinates, 1, function(x) {
+  #   sum(mu[[1]][1:x[1]]) + sum(mu[[2]][x[2]:J]) + sum(mu[[3]][1:x[3]])
+  # })
+  # mu <- mu - mean(mu)
+  location <- sapply(c(I, J, K), function(x) sample.int(x, 1))
+  s <- matrix(0.3, nrow = 3, ncol = 3)
+  diag(s) <- 1
+  s <- s * spread
+  mu <- mvtnorm::dmvnorm(coordinates[, 1:3], mean = location, sigma = s)
+  mu <- mu * targetSnr / max(mu)
   coordinates$signal <- mu
 
   # Generating noise + data -----------------
   noise <- rnorm(nnodes)
   noise <- sqrtCov %*% noise
   coordinates$noise <- noise
-  snr <- var(coordinates$signal) / var(coordinates$noise)
-  coordinates$signal <- coordinates$signal / sqrt(snr) * sqrt(targetSnr)
   coordinates$observed <- coordinates$signal + coordinates$noise
 
   return(coordinates)

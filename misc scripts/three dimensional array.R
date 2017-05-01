@@ -59,9 +59,10 @@ findClusters <- function(coordinates) {
 # coordinates <- expand.grid(i = 1:I, j = 1:J, k = 1:K)
 # covariance <- rho^as.matrix(dist(coordinates[, 1:3], method = "euclidean",
 #                                  diag = TRUE, upper = TRUE))
-# covEigen <- eigen(covariance)
+# covEigen <- eigen(ovariance)
 # sqrtCov <- covEigen$vectors %*% diag(sqrt(covEigen$values)) %*% t(covEigen$vectors)
 # precision <- covEigen$vectors %*% diag((covEigen$values)^-1) %*% t(covEigen$vectors)
+set.seed(50774333)
 targetSnr <- 3.5
 
 # Generating Signal ------------
@@ -82,7 +83,7 @@ par(mfrow = c(3, 3), mar = rep(2, 4))
 location <- sapply(c(I, J, K), function(x) sample.int(x, 1))
 s <- matrix(0.3, nrow = 3, ncol = 3)
 diag(s) <- 1
-s <- s*5
+s <- s*2
 mu <- mvtnorm::dmvnorm(coordinates[, 1:3], mean = location, sigma = s)
 mu <- mu * targetSnr / max(mu)
 coordinates$signal <- mu
@@ -133,6 +134,7 @@ for(m in 1:length(clusters)) {
   subCov <- covariance[cluster$row, cluster$row]
   observed <- coordinates$observed[cluster$row]
   selected <- coordinates$selected[cluster$row]
+  if(sum(selected) == 1) next
   signal <- coordinates$signal[cluster$row]
   try(result <- optimizeSelected(observed, subCov, threshold,
                                  projected = NULL,
@@ -141,12 +143,12 @@ for(m in 1:length(clusters)) {
                                  coordinates = cluster[, 1:3],
                                  tykohonovParam = NULL,
                                  tykohonovSlack = 1,
-                                 stepSizeCoef = 1.5,
+                                 stepSizeCoef = 4,
                                  delay = 20,
                                  assumeConvergence = 1800,
-                                 trimSample = 50,
+                                 trimSample = 15,
                                  maxiter = 2000,
-                                 probMethod = "selected",
+                                 probMethod = "all",
                                  init = observed,
                                  imputeBoundary = "neighbors"))
   #print(result$meanCI)
@@ -160,10 +162,10 @@ for(m in 1:length(clusters)) {
 
   cbind(colMeans(result$sample[, selected, drop = FALSE]), observed[selected])
   k <- 1
-  plot(result$estimates[, selected, drop = FALSE][ ,k])
-  abline(h = observed[selected][k])
-  abline(h = signal[selected][k], col = "red")
-  cbind(observed[selected], result$conditxional[selected], signal[selected])
+  # plot(result$estimates[, selected, drop = FALSE][ ,k])
+  # abline(h = observed[selected][k])
+  # abline(h = signal[selected][k], col = "red")
+  cbind(observed[selected], result$conditional[selected], signal[selected])
 
   # try(truesamp <- optimizeSelected(observed, subCov, threshold,
   #                                 selected = selected,

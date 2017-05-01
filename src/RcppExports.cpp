@@ -7,8 +7,8 @@
 using namespace Rcpp;
 
 // sampleTruncNorm
-NumericVector sampleTruncNorm(NumericVector sample, NumericVector lower, NumericVector upper, NumericVector mean, NumericMatrix precision, int cycles);
-RcppExport SEXP selectivefmri_sampleTruncNorm(SEXP sampleSEXP, SEXP lowerSEXP, SEXP upperSEXP, SEXP meanSEXP, SEXP precisionSEXP, SEXP cyclesSEXP) {
+NumericVector sampleTruncNorm(NumericVector sample, NumericVector lower, NumericVector upper, NumericVector mean, NumericMatrix sigma, NumericVector condSigma, int cycles);
+RcppExport SEXP selectivefmri_sampleTruncNorm(SEXP sampleSEXP, SEXP lowerSEXP, SEXP upperSEXP, SEXP meanSEXP, SEXP sigmaSEXP, SEXP condSigmaSEXP, SEXP cyclesSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -16,9 +16,10 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< NumericVector >::type lower(lowerSEXP);
     Rcpp::traits::input_parameter< NumericVector >::type upper(upperSEXP);
     Rcpp::traits::input_parameter< NumericVector >::type mean(meanSEXP);
-    Rcpp::traits::input_parameter< NumericMatrix >::type precision(precisionSEXP);
+    Rcpp::traits::input_parameter< NumericMatrix >::type sigma(sigmaSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type condSigma(condSigmaSEXP);
     Rcpp::traits::input_parameter< int >::type cycles(cyclesSEXP);
-    rcpp_result_gen = Rcpp::wrap(sampleTruncNorm(sample, lower, upper, mean, precision, cycles));
+    rcpp_result_gen = Rcpp::wrap(sampleTruncNorm(sample, lower, upper, mean, sigma, condSigma, cycles));
     return rcpp_result_gen;
 END_RCPP
 }

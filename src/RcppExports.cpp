@@ -6,6 +6,34 @@
 
 using namespace Rcpp;
 
+// sampleExtreme
+double sampleExtreme(double mu, double sd, double lower, double upper);
+RcppExport SEXP selectivefmri_sampleExtreme(SEXP muSEXP, SEXP sdSEXP, SEXP lowerSEXP, SEXP upperSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< double >::type mu(muSEXP);
+    Rcpp::traits::input_parameter< double >::type sd(sdSEXP);
+    Rcpp::traits::input_parameter< double >::type lower(lowerSEXP);
+    Rcpp::traits::input_parameter< double >::type upper(upperSEXP);
+    rcpp_result_gen = Rcpp::wrap(sampleExtreme(mu, sd, lower, upper));
+    return rcpp_result_gen;
+END_RCPP
+}
+// sampleUnivTruncNorm
+double sampleUnivTruncNorm(double mu, double sd, double lower, double upper);
+RcppExport SEXP selectivefmri_sampleUnivTruncNorm(SEXP muSEXP, SEXP sdSEXP, SEXP lowerSEXP, SEXP upperSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< double >::type mu(muSEXP);
+    Rcpp::traits::input_parameter< double >::type sd(sdSEXP);
+    Rcpp::traits::input_parameter< double >::type lower(lowerSEXP);
+    Rcpp::traits::input_parameter< double >::type upper(upperSEXP);
+    rcpp_result_gen = Rcpp::wrap(sampleUnivTruncNorm(mu, sd, lower, upper));
+    return rcpp_result_gen;
+END_RCPP
+}
 // sampleTruncNorm
 NumericVector sampleTruncNorm(NumericVector sample, NumericVector lower, NumericVector upper, NumericVector mean, NumericMatrix precision, int cycles);
 RcppExport SEXP selectivefmri_sampleTruncNorm(SEXP sampleSEXP, SEXP lowerSEXP, SEXP upperSEXP, SEXP meanSEXP, SEXP precisionSEXP, SEXP cyclesSEXP) {

@@ -63,8 +63,7 @@ findClusters <- function(coordinates) {
 # covEigen <- eigen(ovariance)
 # sqrtCov <- covEigen$vectors %*% diag(sqrt(covEigen$values)) %*% t(covEigen$vectors)
 # precision <- covEigen$vectors %*% diag((covEigen$values)^-1) %*% t(covEigen$vectors)
-set.seed(50774333)
-targetSnr <- 3.5
+targetSnr <- 4
 
 # Generating Signal ------------
 coordinates <- expand.grid(i = 1:I, j = 1:J, k = 1:K)
@@ -143,8 +142,8 @@ for(m in 1:length(clusters)) {
                                  stepRate = 0.65,
                                  coordinates = cluster[, 1:3],
                                  tykohonovParam = NULL,
-                                 tykohonovSlack = 1,
-                                 stepSizeCoef = 1,
+                                 tykohonovSlack = 10000,
+                                 stepSizeCoef = 4,
                                  delay = 20,
                                  assumeConvergence = 1800,
                                  trimSample = 15,

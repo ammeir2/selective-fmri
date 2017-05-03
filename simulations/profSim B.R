@@ -62,6 +62,22 @@ run.sim <- function(config) {
       subCov <- covariance[cluster$row, cluster$row, drop = FALSE]
 
       result <- NULL
+      # try(profile <- optimizeSelected(observed, subCov, threshold,
+      #                                 selected = selected,
+      #                                 projected = mean(signal[selected]),
+      #                                 stepRate = 0.6,
+      #                                 coordinates = cluster[, 1:3],
+      #                                 tykohonovParam = NULL,
+      #                                 tykohonovSlack = 0.5,
+      #                                 stepSizeCoef = 2,
+      #                                 delay = 10,
+      #                                 assumeConvergence = 500,
+      #                                 trimSample = 25,
+      #                                 maxiter = 2500,
+      #                                 probMethod = "onesided",
+      #                                 init = observed,
+      #                                 imputeBoundary = "neighbors"))
+
       try(result <- optimizeSelected(observed, subCov, threshold,
                                       projected = 0,
                                      selected = selected,
@@ -83,7 +99,7 @@ run.sim <- function(config) {
       profMeans <- NULL
       try(profMeans <- rowMeans(samp[, selected, drop = FALSE]))
       if(is.null(profMeans)) next
-      betterPval <- 2 * min(mean(naive < profMeans), mean(naive > profMeans))
+      betterPval <-  min(mean(naive < profMeans), mean(naive > profMeans))
       # if(naive > 0) {
       #   betterPval <- mean(naive < profMeans)
       # } else {
@@ -97,7 +113,7 @@ run.sim <- function(config) {
                                      stepRate = 0.6,
                                      coordinates = cluster[, 1:3],
                                      tykohonovParam = NULL,
-                                     tykohonovSlack = 1,
+                                     tykohonovSlack = 0.5,
                                      stepSizeCoef = 2,
                                      delay = 10,
                                      assumeConvergence = 500,
@@ -111,7 +127,7 @@ run.sim <- function(config) {
       profMeans <- NULL
       try(profMeans <- rowMeans(samp[, selected, drop = FALSE]))
       if(is.null(profMeans)) next
-      profPval <- 2 * min(mean(naive < profMeans), mean(naive > profMeans))
+      profPval <-  min(mean(naive < profMeans), mean(naive > profMeans))
       # if(naive > 0) {
       #   profPval <- mean(naive < profMeans)
       # } else {

@@ -319,12 +319,12 @@ optimizeSelected <- function(y, cov, threshold,
       stepSizeCoef <- 0
     }
     condExp <- as.numeric(invcov %*% samp)
-    if(tykohonovParam[1] > 0) {
+    if(tykohonovParam[1] > 0 & sum(selected) > 1) {
       firstGrad <- - as.numeric(firstDiff %*% mu[selected]) * tykohonovParam[1]
     } else {
       firstGrad <- 0
     }
-    if(tykohonovParam[2] > 0) {
+    if(tykohonovParam[2] > 0 & sum(selected) > 1) {
       secondGrad <- - as.numeric(secondDiff %*% mu[selected]) * tykohonovParam[2]
     } else {
       secondGrad <- 0
@@ -365,12 +365,14 @@ optimizeSelected <- function(y, cov, threshold,
     }
 
     # Updating Tykohonov Params
-    if(i > assumeConvergence / 3 & !slackAdjusted & is.null(projected)) {
+    if(i > assumeConvergence / 3 & !slackAdjusted &
+       is.null(projected) &
+       sum(selected) > 1) {
       tykohonovSlack <- pmax(tykohonovSlack * mean(mu[selected]) / obsmean, 10^-3)
       slackAdjusted <- TRUE
     }
 
-    if(any(tykohonovParam > 0)) {
+    if(any(tykohonovParam > 0) & sum(selected) > 1) {
       tykohonovParam <- adjustTykohonov(obsDiff, obsmean, mu, selected,
                                         firstDiff, secondDiff,
                                         tykohonovSlack, tykohonovParam)

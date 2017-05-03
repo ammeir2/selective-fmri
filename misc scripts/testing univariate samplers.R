@@ -1,7 +1,7 @@
 # First example --------------
-mu <- -0.5
-lower <- 1
-upper <- Inf
+mu <- 0.2
+lower <- -Inf
+upper <- -1
 sd <- 0.5
 reps <- 10^4
 extreme <- numeric(reps)

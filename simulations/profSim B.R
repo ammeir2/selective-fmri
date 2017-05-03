@@ -61,23 +61,6 @@ run.sim <- function(config) {
       print(c(round(m / length(clusters), 2), nrow(cluster)))
       subCov <- covariance[cluster$row, cluster$row, drop = FALSE]
 
-      result <- NULL
-      # try(profile <- optimizeSelected(observed, subCov, threshold,
-      #                                 selected = selected,
-      #                                 projected = mean(signal[selected]),
-      #                                 stepRate = 0.6,
-      #                                 coordinates = cluster[, 1:3],
-      #                                 tykohonovParam = NULL,
-      #                                 tykohonovSlack = 0.5,
-      #                                 stepSizeCoef = 2,
-      #                                 delay = 10,
-      #                                 assumeConvergence = 500,
-      #                                 trimSample = 25,
-      #                                 maxiter = 2500,
-      #                                 probMethod = "onesided",
-      #                                 init = observed,
-      #                                 imputeBoundary = "neighbors"))
-
       try(result <- optimizeSelected(observed, subCov, threshold,
                                       projected = 0,
                                      selected = selected,
@@ -88,8 +71,8 @@ run.sim <- function(config) {
                                       stepSizeCoef = 0,
                                       delay = 1,
                                       assumeConvergence = 1,
-                                      trimSample = 25,
-                                      maxiter = 2500,
+                                      trimSample = 200,
+                                      maxiter = 1005,
                                      probMethod = "onesided",
                                       init = rep(0, length(observed)),
                                      imputeBoundary = "neighbors"))
@@ -113,12 +96,12 @@ run.sim <- function(config) {
                                      stepRate = 0.6,
                                      coordinates = cluster[, 1:3],
                                      tykohonovParam = NULL,
-                                     tykohonovSlack = 0.5,
+                                     tykohonovSlack = 2,
                                      stepSizeCoef = 2,
                                      delay = 10,
-                                     assumeConvergence = 500,
-                                     trimSample = 25,
-                                     maxiter = 2500,
+                                     assumeConvergence = 750,
+                                     trimSample = 200,
+                                     maxiter = 1800,
                                      probMethod = "onesided",
                                      init = observed,
                                      imputeBoundary = "neighbors"))
@@ -172,7 +155,7 @@ configurations <- expand.grid(snr = c(3, 2.5, 2, 1.5, 1),
                               spread = c(2, 1),
                               rho = c(0.5, 0.75),
                               BHlevel = 0.1,
-                              replications = 25)
+                              replications = 50)
 
 set.seed(510)
 system.time(simResults <- apply(configurations, 1, run.sim))

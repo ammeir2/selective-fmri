@@ -63,7 +63,8 @@ findClusters <- function(coordinates) {
 # covEigen <- eigen(ovariance)
 # sqrtCov <- covEigen$vectors %*% diag(sqrt(covEigen$values)) %*% t(covEigen$vectors)
 # precision <- covEigen$vectors %*% diag((covEigen$values)^-1) %*% t(covEigen$vectors)
-targetSnr <- 4
+targetSnr <- 3
+set.seed(5120)
 
 # Generating Signal ------------
 coordinates <- expand.grid(i = 1:I, j = 1:J, k = 1:K)
@@ -134,7 +135,7 @@ for(m in 1:length(clusters)) {
   subCov <- covariance[cluster$row, cluster$row]
   observed <- coordinates$observed[cluster$row]
   selected <- coordinates$selected[cluster$row]
-  if(sum(selected) == 1) next
+  #if(sum(selected) == 1) next
   signal <- coordinates$signal[cluster$row]
   try(result <- optimizeSelected(observed, subCov, threshold,
                                  projected = NULL,
@@ -142,13 +143,13 @@ for(m in 1:length(clusters)) {
                                  stepRate = 0.65,
                                  coordinates = cluster[, 1:3],
                                  tykohonovParam = NULL,
-                                 tykohonovSlack = 10000,
+                                 tykohonovSlack = 2,
                                  stepSizeCoef = 4,
                                  delay = 20,
                                  assumeConvergence = 1800,
-                                 trimSample = 15,
+                                 trimSample = 100,
                                  maxiter = 2000,
-                                 probMethod = "selected",
+                                 probMethod = "all",
                                  init = observed,
                                  imputeBoundary = "neighbors"))
   #print(result$meanCI)

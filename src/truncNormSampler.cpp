@@ -24,13 +24,13 @@ double sampleExtreme(double mu, double sd, double lower, double upper) {
   bool reject = true ;
   int iter = 0;
   while(reject & (iter++ < 10000)) {
-    proposal = threshold + R::rexp(alpha) ;
+    proposal = threshold + R::rexp(1 / alpha) ;
     phi = std::exp(-std::pow(proposal - alpha, 2) / 2) ;
     if(runif(1)[0] < phi) {
       reject = false ;
     }
   }
-  Rcpp::Rcout<<iter<<"\n" ;
+  //Rcpp::Rcout<<iter<<"\n" ;
 
   proposal = proposal * sd + mu ;
   return proposal * sign;
@@ -82,7 +82,7 @@ NumericVector sampleTruncNorm(NumericVector sample,
   double condMean ;
   double condSD ;
   int i, j ;
-  int EXTREME_THRESHOLD = 100 ;
+  int EXTREME_THRESHOLD = 4 ;
   NumericVector samp = clone(sample) ;
 
   for(i = 0; i < cycles ; i++) {
@@ -92,8 +92,7 @@ NumericVector sampleTruncNorm(NumericVector sample,
       condSD = std::sqrt(1 / precision(j, j)) ;
       if((isinf(std::abs(lower[j])) & ((condMean - upper[j]) / condSD) > EXTREME_THRESHOLD) |
          (isinf(std::abs(upper[j])) & ((lower[j] - condMean) / condSD) > EXTREME_THRESHOLD)) {
-        samp[j] = sampleUnivTruncNorm(condMean, condSD, lower[j], upper[j]) ;
-        //samp[j] = sampleExtreme(condMean, condSD, lower[j], upper[j]) ;
+        samp[j] = sampleExtreme(condMean, condSD, lower[j], upper[j]) ;
       } else {
         samp[j] = sampleUnivTruncNorm(condMean, condSD, lower[j], upper[j]) ;
       }

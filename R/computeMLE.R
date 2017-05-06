@@ -381,13 +381,13 @@ optimizeSelected <- function(y, cov, threshold,
 
     # progress...
     if((i %% 100) == 0) {
-      cat(i, " ")
+      #cat(i, " ")
       # cat(i, " ", round(mean(mu[selected]), 3), " ")
       # print(c(tyk = tykohonovParam))
       #print(mu[selected])
     }
   }
-  cat("\n")
+  #cat("\n")
 
   if(restarts > 0) {
     warning(paste("Chain restarted", restarts, "times!"))

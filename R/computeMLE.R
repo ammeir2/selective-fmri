@@ -3,7 +3,7 @@ computeTykohonov <- function(selected, coordinates) {
   coordinates <- coordinates[selected, , drop = FALSE]
   if(nrow(coordinates) == 1) return(matrix(0))
 
-  distances <- as.matrix(dist(coordinates), method = "manhattan")
+  distances <- as.matrix(dist(coordinates), method = "euclidean")
   diag(distances) <- Inf
 
   dims <- ncol(coordinates)
@@ -46,12 +46,13 @@ computeTykohonov <- function(selected, coordinates) {
   }
 
   firstDiff <- firstDiff[firstDiff[, 1] != 0, ]
-  firstDiff <- Matrix::sparseMatrix(i = firstDiff[, 1], j = firstDiff[, 2], x = firstDiff[, 3])
+  firstDiff <- Matrix::sparseMatrix(i = firstDiff[, 1], j = firstDiff[, 2], x = firstDiff[, 3],
+                                    dims = c(nrow(firstDiff), sum(selected)))
   secondDiff <- secondDiff[secondDiff[, 2] != 0, ]
   if(length(secondDiff) == 0) {
     secondDiff <- Matrix::sparseMatrix(i = p, j = p, x = 0)
   } else {
-    if(max(secondDiff[, 1]) < p | max(secondDiff[, 2] <p)) {
+    if(max(secondDiff[, 1]) < p | max(secondDiff[, 2] < p)) {
       secondDiff <- rbind(secondDiff, c(p, p, 0))
     }
     secondDiff <- Matrix::sparseMatrix(i = secondDiff[, 1], j = secondDiff[, 2], x = secondDiff[, 3])

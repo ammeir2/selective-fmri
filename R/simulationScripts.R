@@ -2,7 +2,7 @@ findClusters <- function(coordinates) {
   columns <- which(names(coordinates) %in% c("i", "j", "k"))
   selected <- coordinates[coordinates$selected, ]
   graph <- as.matrix(dist(coordinates[, columns], method = "manhattan"))
-  graph[graph > 1] <- 0
+  graph[graph > 2] <- 0
   clusterNumber <- 1
   clusters <- list()
   while(nrow(selected) > 0) {

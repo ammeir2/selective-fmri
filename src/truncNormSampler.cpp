@@ -9,7 +9,7 @@ double sampleExtreme(double mu, double sd, double lower, double upper) {
   double alpha ;
   double phi ;
 
-  if(isinf(lower)) {
+  if(std::isinf(lower)) {
     sign = -1 ;
     mu *= sign ;
     threshold = upper * sign ;
@@ -46,7 +46,7 @@ double sampleUnivTruncNorm(double mu, double sd, double lower, double upper) {
 
   // Sometimes the sampler doesn't work well, in those cases we use a rejection
   // sampler. They do something similar in the truncnorm package.
-  while(sample < lower | sample > upper | isinf(std::abs(sample))) {
+  while(sample < lower | sample > upper | std::isinf(std::abs(sample))) {
     sample = sampleExtreme(mu, sd, lower, upper) ;
   }
 
@@ -90,8 +90,8 @@ NumericVector sampleTruncNorm(NumericVector sample,
       condMean = computeConditionalMean(mean, samp, precision, j) ;
       //Rcpp::Rcout<<mean[j]<<" "<<condMean<<"\n" ;
       condSD = std::sqrt(1 / precision(j, j)) ;
-      if((isinf(std::abs(lower[j])) & ((condMean - upper[j]) / condSD) > EXTREME_THRESHOLD) |
-         (isinf(std::abs(upper[j])) & ((lower[j] - condMean) / condSD) > EXTREME_THRESHOLD)) {
+      if((std::isinf(std::abs(lower[j])) & ((condMean - upper[j]) / condSD) > EXTREME_THRESHOLD) |
+         (std::isinf(std::abs(upper[j])) & ((lower[j] - condMean) / condSD) > EXTREME_THRESHOLD)) {
         samp[j] = sampleExtreme(condMean, condSD, lower[j], upper[j]) ;
       } else {
         samp[j] = sampleUnivTruncNorm(condMean, condSD, lower[j], upper[j]) ;

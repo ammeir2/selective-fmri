@@ -181,50 +181,32 @@ run.sim <- function(config) {
   return(simresults)
 }
 
-configurations <- expand.grid(snr = c(3.2, 1.6, 0.8, 0.4),
-                              spread = c(4, 2, 1),
+configurations <- expand.grid(snr = c(4, 3, 2, 1, 0),
+                              spread = c(2),
                               rho = c(0.5, 0.75),
-                              BHlevel = 0.01,
-                              replications = 5)
+                              BHlevel = c(0.001, 0.01),
+                              replications = 30)
 
-set.seed(11)
 system.time(simResults <- apply(configurations, 1, run.sim))
-save(simResults, file = "simulations/results/May 11 naive.Robj")
+save(simResults, file = "simulations/results/May 12F naive.Robj")
 
-# load(file = "simulations/results/May 4 both.Robj")
-# simResults4 <- simResults
-# load(file = "simulations/results/May 4B both.Robj")
-# simResults4B <- simResults
-# load(file = "simulations/results/May 4C both.Robj")
-# simResults4C <- simResults
-# load(file = "simulations/results/May 5 both.Robj")
-# simResults5 <- simResults
-# load(file = "simulations/results/May 5B both.Robj")
-# simResults5B <- simResults
-# load(file = "simulations/results/May 5B both.Robj")
-# simResults5C <- simResults
+load(file = "simulations/results/May 12 naive.Robj")
+simResults12 <- simResults
+load(file = "simulations/results/May 12B naive.Robj")
+simResults12B <- simResults
+load(file = "simulations/results/May 12C naive.Robj")
+simResults12C <- simResults
+load(file = "simulations/results/May 12D naive.Robj")
+simResults12D <- simResults
+load(file = "simulations/results/May 12E naive.Robj")
+simResults12E <- simResults
+load(file = "simulations/results/May 12F naive.Robj")
+simResults12F <- simResults
 
-# load(file = "simulations/results/May 6 bonf.Robj")
-# simResults6 <- simResults
-# load(file = "simulations/results/May 6B bonf.Robj")
-# simResults6B <- simResults
-# load(file = "simulations/results/May 7 bonf.Robj")
-# simResults7 <- simResults
-# load(file = "simulations/results/May 7B bonf.Robj")
-# simResults7B <- simResults
-# load(file = "simulations/results/May 7C bonf.Robj")
-# simResults7C <- simResults
-# load(file = "simulations/results/May 7D bonf.Robj")
-# simResults7D <- simResults
-# load(file = "simulations/results/May 7E bonf.Robj")
-# simResults7E <- simResults
-# load(file = "simulations/results/May 7F bonf.Robj")
-# simResults7F <- simResults
-# load(file = "simulations/results/May 8 bonf.Robj")
-# simResults8 <- simResults
-# load(file = "simulations/results/May 8B bonf.Robj")
-# simResults8B <- simResults
 
+
+simResults <- c(simResults12, simResults12B, simResults12C,
+                simResults12D, simResults12E, simResults12F)
 
 # Processing ------------------------
 library(ggplot2)
@@ -235,7 +217,7 @@ len <- 1
 for(i in 1:length(simResults)) {
   for(j in 1:length(simResults[[i]])) {
     nonEmpty <- sapply(simResults[[i]][[j]], length) > 0
-    iterResult <- data.frame(matrix(nrow = sum(nonEmpty), ncol = 11))
+    iterResult <- data.frame(matrix(nrow = sum(nonEmpty), ncol = 13))
     iterList <- simResults[[i]][[j]]
     row <- 1
     exp <- j * runif(1)
@@ -256,12 +238,14 @@ for(i in 1:length(simResults)) {
                              size = as.numeric(iterList[[k]][[1]][[6]]),
                              true = as.numeric(iterList[[k]][[1]][[7]]),
                              pval = as.numeric(iterList[[k]][[2]][[3]]),
-                             cover = as.numeric(iterList[[k]][[2]][[2]]))
+                             cover = as.numeric(iterList[[k]][[2]][[2]]),
+                             naive = iterList[[k]][[3]][[2]],
+                             cond = iterList[[k]][[3]][[1]])
       row <- row + 1
     }
     iterResult <- data.frame(iterResult)
     names(iterResult) <- c("experiment", "cluster", "snr", "spread", "method", "rho",
-                           "BHlevel", "size", "true", "pval", "cover")
+                           "pthreshold", "size", "true", "pval", "cover", "naive", "cond")
     resultList[[len]] <- iterResult
     len <- len + 1
   }
@@ -276,12 +260,19 @@ results$true <- as.numeric(as.character(results$true))
 results$snr <- as.numeric(as.character(results$snr))
 results$experiment <- as.numeric(as.character(results$experiment))
 results$size <- as.numeric(as.character(results$size))
+results$cond <- as.numeric(as.character(results$cond))
+results$naive <- as.numeric(as.character(results$naive))
 
+
+# Plot by snr --------------------
 level <- 0.05
-cover <- summarize(group_by(results, experiment, snr, spread, method, rho),
-                   cover = sum((cover > level * 2) * size, na.rm = TRUE) / sum(size[!is.na(cover > level)]),
-                   power = mean(pval[true > 0.05] < level, w = size, na.rm = TRUE))
-cover <- summarize(group_by(cover, snr, spread, method, rho),
+cover <- summarize(group_by(results, experiment, snr, spread, method, rho, pthreshold),
+                   cover = sum((cover > level) * size, na.rm = TRUE) / sum(size[!is.na(cover > level)]),
+                   power = pval[which.max(true)] < level)
+# cover <- summarize(group_by(results, experiment, snr, spread, method, rho, BHlevel),
+#                    cover = mean(cover > level, na.rm = TRUE),
+#                    power = pval[which.max(true)] < level)
+cover <- summarize(group_by(cover, snr, spread, method, rho, pthreshold),
                    coversd = sd(cover) / sqrt(length(cover)),
                    cover = mean(cover),
                    powersd = sd(power, na.rm = TRUE) / sqrt(length(power)),
@@ -289,28 +280,106 @@ cover <- summarize(group_by(cover, snr, spread, method, rho),
 
 
 quantile <- qnorm(1 - 0.05 / nrow(cover))
+ciwidth <- 0.1
 ggplot(cover) +
   geom_line(aes(x = snr, y = cover, col = method)) +
-  facet_grid(rho ~ spread, labeller = "label_both") +
+  facet_grid(rho ~ pthreshold, labeller = "label_both") +
   geom_hline(yintercept = 1 - level) + theme_bw() +
   geom_segment(aes(y = pmax(cover - coversd * quantile, 0), yend = pmin(cover + coversd * quantile, 1),
                    x = snr, xend = snr, col = method), linetype = 2) +
+  geom_segment(aes(y = pmax(cover - coversd * quantile, 0), yend = pmax(cover - coversd * quantile, 0),
+                   x = snr - ciwidth, xend = snr + ciwidth, col = method)) +
+  geom_segment(aes(y = pmin(cover + coversd * quantile, 1), yend = pmin(cover + coversd * quantile, 1),
+                   x = snr - ciwidth, xend = snr + ciwidth, col = method)) +
   ggtitle("Coverage Rate for Profile CIs")
 
 ggplot(cover) +
   geom_line(aes(x = snr, y = power, col = method)) +
-  facet_grid(rho ~ spread, labeller = "label_both") +
+  facet_grid(rho ~ pthreshold, labeller = "label_both") +
   geom_hline(yintercept = level) + theme_bw() +
   geom_segment(aes(y = pmax(power - powersd * quantile, 0), yend = pmin(power + powersd * quantile, 1),
                    x = snr, xend = snr, col = method), linetype = 2) +
+  geom_segment(aes(y = pmax(power - powersd * quantile, 0), yend = pmax(power - powersd * quantile, 0),
+                   x = snr - ciwidth, xend = snr + ciwidth, col = method)) +
+  geom_segment(aes(y = pmin(power + powersd * quantile, 1), yend = pmin(power + powersd * quantile, 1),
+                   x = snr - ciwidth, xend = snr + ciwidth, col = method)) +
   ylim(0, 1) +
-  ggtitle("Power for Profile CIs")
+  ggtitle("Power for Profile CIs") + xlim(1 - ciwidth, 4 + ciwidth)
 
-results$power <- (results$pval < level) * 1.0
-ggplot(results) +
-  geom_smooth(aes(x = true, y = power, col = method, weight = size),
-              method = "loess") +
-  theme_bw() +
-  facet_grid(rho ~ spread, labeller = "label_both") + ylim(0, 1)
+# Plot by true signal ---------------------------
+# temp <- results
+# ncut <- 4
+# temp$true <- cut(temp$true, ncut, labels = FALSE)
+# map <- cbind(1:ncut, seq(from = 0, to = max(results$true), length.out = ncut))
+# temp$true <- map[temp$true, 2]
+# cover <- summarize(group_by(temp, experiment, true, spread, method, rho, BHlevel),
+#                    cover = sum((cover > level) * size, na.rm = TRUE) / sum(size[!is.na(cover > level)]),
+#                    power = pval[which.max(true)] < level)
+# cover <- summarize(group_by(cover, true, spread, method, rho, BHlevel),
+#                    coversd = sd(cover) / sqrt(length(cover)),
+#                    cover = mean(cover),
+#                    powersd = sd(power, na.rm = TRUE) / sqrt(length(power)),
+#                    power = mean(power, na.rm = TRUE))
+#
+#
+# quantile <- qnorm(1 - 0.05 / nrow(cover))
+# cover$true <- as.numeric(cover$true)
+# ggplot(cover) +
+#   geom_line(aes(x = true, y = cover, col = method)) +
+#   facet_grid(rho ~ BHlevel, labeller = "label_both") +
+#   geom_hline(yintercept = 1 - level) + theme_bw() +
+#   geom_segment(aes(y = pmax(cover - coversd * quantile, 0), yend = pmin(cover + coversd * quantile, 1),
+#                    x = true, xend = true, col = method), linetype = 2) +
+#   ggtitle("Coverage Rate for Profile CIs")
+#
+# ggplot(cover) +
+#   geom_line(aes(x = true, y = power, col = method)) +
+#   facet_grid(rho ~ BHlevel, labeller = "label_both") +
+#   geom_hline(yintercept = level) + theme_bw() +
+#   geom_segment(aes(y = pmax(power - powersd * quantile, 0), yend = pmin(power + powersd * quantile, 1),
+#                    x = true, xend = true, col = method), linetype = 2) +
+#   ylim(0, 1) +
+#   ggtitle("Power for Profile CIs")
+
+# Estimation Error ---------------------
+ncut <- 8
+map <- cbind(1:ncut, seq(from = 0, to = max(results$true), length.out = ncut))
+results$true_cut <- map[cut(results$true, ncut, labels = FALSE), 2]
+
+naive <- subset(results, method == "selected")
+naive <- summarize(group_by(naive, snr, pthreshold, rho, experiment),
+                  mse = weighted.mean((naive - true)^2, size),
+                  bias = weighted.mean(naive - true, size))
+naive <- summarize(group_by(naive, snr, pthreshold, rho),
+                   msesd = sd(mse) / sqrt(length(mse)), mse = mean(mse),
+                   biassd = sd(bias) / sqrt(length(bias)), bias = mean(bias))
+naive$method <- "naive"
+
+cond <- subset(results, method == "selected")
+cond <- summarize(group_by(cond, snr, pthreshold, rho, experiment),
+                   mse = weighted.mean((cond - true)^2, size),
+                   bias = weighted.mean(cond - true, size))
+cond <- summarize(group_by(cond, snr, pthreshold, rho),
+                  msesd = sd(mse) / sqrt(length(mse)), mse = mean(mse),
+                  biassd = sd(bias) / sqrt(length(bias)), bias = mean(bias))
+cond$method <- "conditional"
+
+forplot <- rbind(naive, cond)
+ggplot(forplot, aes(x = snr, y = mse, col = method)) +
+  facet_grid(rho ~ pthreshold, labeller = "label_both") +
+  geom_line() + geom_point() +
+  geom_segment(aes(y = mse - 2 * msesd, yend = mse + 2 * msesd,
+                   x = snr, xend = snr, col = method), linetype = 2) +
+  theme_bw()
+
+ggplot(forplot, aes(x = snr, y = bias, col = method)) +
+  facet_grid(rho ~ pthreshold, labeller = "label_both") +
+  geom_line() + geom_point() +
+  geom_segment(aes(y = bias - 2 * biassd, yend = bias + 2 * biassd,
+                   x = snr, xend = snr, col = method), linetype = 2) +
+  geom_hline(yintercept = 0) + theme_bw()
+
+
+
 
 

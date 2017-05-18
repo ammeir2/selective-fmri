@@ -76,8 +76,8 @@ run.sim <- function(config) {
                                   probMethod = "selected",
                                   init = observed,
                                   imputeBoundary = "neighbors"))
-
       conditional <- mean(mle$conditional[selected])
+
       naive <- mean(observed[selected])
       true <- mean(signal[selected])
       mse <- mse * msecount / (msecount + 1) + c(naive = (naive - true)^2, conditional = (conditional - true)^2) / (msecount + 1)
@@ -87,6 +87,23 @@ run.sim <- function(config) {
           method <- "onesided"
         } else if(methodind == 2) {
           method <- "selected"
+        } else if (methodind == 3) {
+          method <- "naive"
+          results[[slot]] <- list()
+          results[[slot]][[1]] <- c(snr = snr, spread = spread, method = methodind,
+                                    rho = rho, BHlevel = BHlevel,
+                                    size = sum(selected), true = true)
+          e <- rep(1 / sum(selected), sum(selected))
+          naiveVar <- as.numeric(t(e) %*% subCov[selected, selected] %*% e)
+          naiveSD <- sqrt(naiveVar)
+          zval <- naive / naiveSD
+          pvalue <- pnorm(-abs(zval))
+          profPval <- 2 * min(pnorm(naive, signal, naiveSD), pnorm(naive, signal, naiveSD, lower.tail = FALSE))
+          profResult <- c(true = mean(signal[selected]), profPval = profPval, pvalue = pvalue)
+          results[[slot]][[2]] <- profResult
+          results[[slot]][[3]] <- c(conditional = NA, naive = naive, true = true)
+          slot <- slot + 1
+          next
         }
         results[[slot]] <- list()
 
@@ -184,11 +201,11 @@ run.sim <- function(config) {
 configurations <- expand.grid(snr = c(4, 3, 2, 1, 0),
                               spread = c(2),
                               rho = c(0.5, 0.75),
-                              BHlevel = c(0.001, 0.01),
+                              BHlevel = c(0.1),
                               replications = 30)
 
 system.time(simResults <- apply(configurations, 1, run.sim))
-save(simResults, file = "simulations/results/May 12F naive.Robj")
+save(simResults, file = "simulations/results/May 12J naive.Robj")
 
 load(file = "simulations/results/May 12 naive.Robj")
 simResults12 <- simResults
@@ -202,11 +219,21 @@ load(file = "simulations/results/May 12E naive.Robj")
 simResults12E <- simResults
 load(file = "simulations/results/May 12F naive.Robj")
 simResults12F <- simResults
+load(file = "simulations/results/May 12G naive.Robj")
+simResults12G <- simResults
+load(file = "simulations/results/May 12H naive.Robj")
+simResults12H <- simResults
+load(file = "simulations/results/May 12I naive.Robj")
+simResults12I <- simResults
+load(file = "simulations/results/May 12J naive.Robj")
+simResults12J <- simResults
 
 
 
 simResults <- c(simResults12, simResults12B, simResults12C,
-                simResults12D, simResults12E, simResults12F)
+                simResults12D, simResults12E, simResults12F,
+                simResults12G, simResults12H, simResults12I,
+                simResults12J)
 
 # Processing ------------------------
 library(ggplot2)
@@ -227,6 +254,8 @@ for(i in 1:length(simResults)) {
         method <- "onesided"
       } else if(method == 2) {
         method <- "selected"
+      } else if (method == 3) {
+        method <- "naive"
       }
       iterResult[row, ] <- c(experiment = exp,
                              cluster = row,
@@ -251,9 +280,7 @@ for(i in 1:length(simResults)) {
   }
 }
 results <- do.call("rbind", resultList)
-# two <- readRDS(file = "simulations/results/may4two.Robj")
-# one <- readRDS(file = "simulations/results/may4one.Robj")
-# results <- rbind(one, two, results)
+
 results$cover <- as.numeric(as.character(results$cover))
 results$pval <- as.numeric(as.character(results$pval))
 results$true <- as.numeric(as.character(results$true))
@@ -269,9 +296,7 @@ level <- 0.05
 cover <- summarize(group_by(results, experiment, snr, spread, method, rho, pthreshold),
                    cover = sum((cover > level) * size, na.rm = TRUE) / sum(size[!is.na(cover > level)]),
                    power = pval[which.max(true)] < level)
-# cover <- summarize(group_by(results, experiment, snr, spread, method, rho, BHlevel),
-#                    cover = mean(cover > level, na.rm = TRUE),
-#                    power = pval[which.max(true)] < level)
+
 cover <- summarize(group_by(cover, snr, spread, method, rho, pthreshold),
                    coversd = sd(cover) / sqrt(length(cover)),
                    cover = mean(cover),
@@ -281,30 +306,39 @@ cover <- summarize(group_by(cover, snr, spread, method, rho, pthreshold),
 
 quantile <- qnorm(1 - 0.05 / nrow(cover))
 ciwidth <- 0.1
-ggplot(cover) +
-  geom_line(aes(x = snr, y = cover, col = method)) +
+coverplot <- ggplot(cover) +
+  geom_line(aes(x = snr, y = cover, col = method, linetype = method)) +
+  geom_point(aes(x = snr, y = cover, col = method)) +
   facet_grid(rho ~ pthreshold, labeller = "label_both") +
   geom_hline(yintercept = 1 - level) + theme_bw() +
   geom_segment(aes(y = pmax(cover - coversd * quantile, 0), yend = pmin(cover + coversd * quantile, 1),
-                   x = snr, xend = snr, col = method), linetype = 2) +
+                   x = snr, xend = snr, col = method, linetype = method)) +
   geom_segment(aes(y = pmax(cover - coversd * quantile, 0), yend = pmax(cover - coversd * quantile, 0),
                    x = snr - ciwidth, xend = snr + ciwidth, col = method)) +
   geom_segment(aes(y = pmin(cover + coversd * quantile, 1), yend = pmin(cover + coversd * quantile, 1),
                    x = snr - ciwidth, xend = snr + ciwidth, col = method)) +
-  ggtitle("Coverage Rate for Profile CIs")
+  ggtitle("Coverage Rate") + theme(legend.position = "none") +
+  scale_colour_brewer(palette = "Set1")
+coverplot
 
-ggplot(cover) +
-  geom_line(aes(x = snr, y = power, col = method)) +
+powerplot <- ggplot(cover) +
+  geom_line(aes(x = snr, y = power, col = method, linetype = method)) +
+  geom_point(aes(x = snr, y = power, col = method)) +
   facet_grid(rho ~ pthreshold, labeller = "label_both") +
   geom_hline(yintercept = level) + theme_bw() +
   geom_segment(aes(y = pmax(power - powersd * quantile, 0), yend = pmin(power + powersd * quantile, 1),
-                   x = snr, xend = snr, col = method), linetype = 2) +
+                   x = snr, xend = snr, col = method, linetype = method)) +
   geom_segment(aes(y = pmax(power - powersd * quantile, 0), yend = pmax(power - powersd * quantile, 0),
                    x = snr - ciwidth, xend = snr + ciwidth, col = method)) +
   geom_segment(aes(y = pmin(power + powersd * quantile, 1), yend = pmin(power + powersd * quantile, 1),
                    x = snr - ciwidth, xend = snr + ciwidth, col = method)) +
-  ylim(0, 1) +
-  ggtitle("Power for Profile CIs") + xlim(1 - ciwidth, 4 + ciwidth)
+  ylim(0, 1) + xlim(1 - ciwidth, 4 + ciwidth) +
+  ggtitle("Power") + theme(legend.position = "none")
+powerplot
+
+# pdf("figures/ciplots.pdf",pagecentre=T, width=8, height=2.5 ,paper = "special")
+# gridExtra::grid.arrange(coverplot, powerplot, nrow = 1)
+# dev.off()
 
 # Plot by true signal ---------------------------
 # temp <- results
@@ -348,8 +382,8 @@ results$true_cut <- map[cut(results$true, ncut, labels = FALSE), 2]
 
 naive <- subset(results, method == "selected")
 naive <- summarize(group_by(naive, snr, pthreshold, rho, experiment),
-                  mse = weighted.mean((naive - true)^2, size),
-                  bias = weighted.mean(naive - true, size))
+                  mse = weighted.mean(sqrt((naive - true)^2), size),
+                  bias = weighted.mean(sign(naive) * (naive - true), size))
 naive <- summarize(group_by(naive, snr, pthreshold, rho),
                    msesd = sd(mse) / sqrt(length(mse)), mse = mean(mse),
                    biassd = sd(bias) / sqrt(length(bias)), bias = mean(bias))
@@ -357,28 +391,36 @@ naive$method <- "naive"
 
 cond <- subset(results, method == "selected")
 cond <- summarize(group_by(cond, snr, pthreshold, rho, experiment),
-                   mse = weighted.mean((cond - true)^2, size),
-                   bias = weighted.mean(cond - true, size))
+                   mse = weighted.mean(sqrt((cond - true)^2), size),
+                   bias = weighted.mean(sign(naive)*(cond - true), size))
 cond <- summarize(group_by(cond, snr, pthreshold, rho),
                   msesd = sd(mse) / sqrt(length(mse)), mse = mean(mse),
                   biassd = sd(bias) / sqrt(length(bias)), bias = mean(bias))
 cond$method <- "conditional"
 
 forplot <- rbind(naive, cond)
-ggplot(forplot, aes(x = snr, y = mse, col = method)) +
+mse <- ggplot(forplot, aes(x = snr, y = mse, col = method)) +
   facet_grid(rho ~ pthreshold, labeller = "label_both") +
-  geom_line() + geom_point() +
+  geom_line(aes(linetype = method)) + geom_point() +
   geom_segment(aes(y = mse - 2 * msesd, yend = mse + 2 * msesd,
                    x = snr, xend = snr, col = method), linetype = 2) +
-  theme_bw()
+  theme_bw() + ggtitle("Root Mean Squared Error") +
+  theme(legend.position = "none")
+mse
 
-ggplot(forplot, aes(x = snr, y = bias, col = method)) +
+bias <- ggplot(forplot, aes(x = snr, y = bias, col = method)) +
   facet_grid(rho ~ pthreshold, labeller = "label_both") +
-  geom_line() + geom_point() +
+  geom_line(aes(linetype = method)) + geom_point() +
   geom_segment(aes(y = bias - 2 * biassd, yend = bias + 2 * biassd,
                    x = snr, xend = snr, col = method), linetype = 2) +
-  geom_hline(yintercept = 0) + theme_bw()
+  geom_hline(yintercept = 0) + theme_bw() +
+  theme(legend.position = "none") +
+  ggtitle("Bias")
+bias
 
+# pdf("figures/estplots.pdf",pagecentre=T, width=8, height=2.5 ,paper = "special")
+# gridExtra::grid.arrange(mse, bias, nrow = 1)
+# dev.off()
 
 
 

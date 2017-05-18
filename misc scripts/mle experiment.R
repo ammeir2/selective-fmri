@@ -31,10 +31,10 @@ findLargestCluster <- function(x) {
   return(clustList)
 }
 
-#set.seed(1231)
-p <- 500
+set.seed(2)
+p <- 200
 signalsig <- 0.05
-signal <- 0.1
+signal <- 0.15
 rho <- 0.85
 sigma <- rho^as.matrix(dist(1:p, diag = TRUE, upper = TRUE))
 mu <- generateHMMmu(p, signal = signal, sig = signalsig)
@@ -60,20 +60,31 @@ CIs <- list()
 naiveCIs <- list()
 for(i in 1:length(clusters)) {
   cluster <- clusters[[i]]
-  if(length(cluster) <= 4) next
+  if(length(cluster) <= 0) next
   print(round(i / length(clusters), 2))
   clusterPlus <- (min(cluster) - 1):(max(cluster) + 1)
   if(clusterPlus[1] == 0) clusterPlus <- clusterPlus[-1]
   if(clusterPlus[length(clusterPlus)] == p + 1) clusterPlus <- clusterPlus[-length(clusterPlus)]
   subCov <- cov[clusterPlus, clusterPlus] / (n)
-  result <- optimizeSelected(yhat[clusterPlus], subCov, threshold,
-                             stepRate = 0.5,
-                             barrierCoef = 0,
-                             stepSizeCoef = 5,
-                             delay = 100,
-                             assumeConvergence = 3000,
-                             trimSample = 100,
-                             maxiter = 7000)
+  selected <- clusterPlus %in% cluster
+  clusterPlus <- matrix(clusterPlus, ncol = 1)
+
+  try(result <- optimizeSelected(yhat[clusterPlus], subCov, threshold,
+                              selected = selected,
+                              stepRate = 0.6,
+                              coordinates = clusterPlus,
+                              tykohonovParam = NULL,
+                              tykohonovSlack = 0.2,
+                              stepSizeCoef = 2,
+                              delay = 10,
+                              assumeConvergence = 1000,
+                              trimSample = 200,
+                              maxiter = 1200,
+                              probMethod = "selected",
+                              init = NULL,
+                              imputeBoundary = "neighbors"))
+  conditional <- mean(mle$conditional[selected])
+
   conditional <- result$conditional
   CIs[[i]] <- result$meanCI
   selected <- abs(yhat[clusterPlus]) > threshold

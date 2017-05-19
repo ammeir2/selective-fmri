@@ -25,10 +25,9 @@ run.sim <- function(config, noise_type ="sim", noise_dat = NULL) {
                                    diag = TRUE, upper = TRUE))
     covEigen <- eigen(covariance)
     sqrtCov <- covEigen$vectors %*% diag(sqrt(covEigen$values)) %*% t(covEigen$vectors)
-
   }
   else if (noise_type == "fmri"){
-    stopifnot(all.equal(dim(noise_dat)[1:3],dims))
+    stopifnot(all.equal(dim(noise_dat)[1:3], dims))
     pop_size <- dim(noise_dat)[4]
     dim(noise_dat) = c(prod(dims), pop_size)
     alpha <- 1/pop_size
@@ -45,9 +44,11 @@ run.sim <- function(config, noise_type ="sim", noise_dat = NULL) {
   simresults <- list()
   simcover <- matrix(nrow = replications, ncol = 2)
   colnames(simcover) <- c("cover", "power")
+  origCov <- covariance
   for(rep in 1:replications) {
     selected <- FALSE
     maxsize <- 0
+    covariance <- origCov
     while(is.na(maxsize) | maxsize < 2) {
       if (noise_type == "sim") {
         coordinates <- generateArrayData3D(dims, sqrtCov, snr, spread)
@@ -55,25 +56,33 @@ run.sim <- function(config, noise_type ="sim", noise_dat = NULL) {
       else if (noise_type == "fmri"){
         coordinates <- residualData3D(noise_dat, grp_size, snr, spread)
       }
-      coordinates$zval <- coordinates$observed / sqrt(diag(covariance))
+      coordinates$observed <- coordinates$observed / sqrt(diag(covariance))
+      coordinates$signal <- coordinates$signal / sqrt(diag(covariance))
+      coordinates$zval <- coordinates$observed
       coordinates$pval <- 2 * pnorm(-abs(coordinates$zval))
       coordinates$qval <- p.adjust(coordinates$pval, method = "bonferroni")
       coordinates$qval <- coordinates$pval  # FOR NO CORRECTION!!!!
       coordinates$selected <- coordinates$qval < BHlevel
       selected <- coordinates$selected
       if(sum(selected) >= 2) {
-        clusters <- findClusters(coordinates)
+        threshold <- abs(qnorm(BHlevel / 2))
+        coordinates$selected <- coordinates$zval > threshold
+        pclusters <- findClusters(coordinates)
+
+        coordinates$selected <- coordinates$zval < -threshold
+        nclusters <- findClusters(coordinates)
+        clusters <- c(pclusters, nclusters)
+        coordinates$selected <- coordinates$qval < BHlevel
+
         maxsize <- max(sapply(clusters, function(x) sum(x$selected)))
       }
     }
 
+    covariance <- cov2cor(covariance)
+
     print(c(rep = rep, rho = rho, grp_size = grp_size, BHlevel = BHlevel, snr = snr, spread = spread))
     print(c(nselected = sum(selected)))
     sizes <- sapply(clusters, nrow)
-    # threshold <- qnorm(BHlevel * sum(coordinates$selected) / nrow(coordinates) / 2,
-    #                    lower.tail = FALSE) ## This is BH threshold
-    #threshold <- qnorm(1 - BHlevel / (I * J * K) / 2)
-    threshold <- abs(qnorm(BHlevel / 2))
 
     results <- list()
     iterPower <- 0
@@ -214,17 +223,16 @@ run.sim <- function(config, noise_type ="sim", noise_dat = NULL) {
 
 configurations <- expand.grid(snr = c(4, 3, 2, 1, 0),
                               spread = c(2),
-                              rho = c(0.5, 0.75),
+                              rho = c(-1),
                               BHlevel = c(0.001, 0.01),
                               replications = 2,
-                              grp_size = c(4,16))
+                              grp_size = c(8, 16, 32))
 
-system.time(simResults <- apply(configurations, 1, run.sim, noise_type ="sim"))
-save(simResults, file = "simulations/results/May 18 sim.Robj")
+# system.time(simResults <- apply(configurations, 1, run.sim, noise_type ="sim"))
+#save(simResults, file = "simulations/results/May 18 sim.Robj")
 
-load('/Users/yuvalb/Dropbox/SelectiveFmri/brain_data_4mm_Cambridge.rda')
+load('fmridata/brain_data_4mm_Cambridge.rda')
 dat = brain_data$t_cube[1:11,1:11,1:9,]
-
 system.time(simResults <- apply(configurations, 1, run.sim, noise_type ="fmri",dat))
 save(simResults, file = "simulations/results/May 18 fmri.Robj")
 

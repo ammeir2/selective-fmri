@@ -376,10 +376,6 @@ powerplot
 #   ggtitle("Power for Profile CIs")
 
 # Estimation Error ---------------------
-ncut <- 8
-map <- cbind(1:ncut, seq(from = 0, to = max(results$true), length.out = ncut))
-results$true_cut <- map[cut(results$true, ncut, labels = FALSE), 2]
-
 naive <- subset(results, method == "selected")
 naive <- summarize(group_by(naive, snr, pthreshold, rho, experiment),
                   mse = weighted.mean(sqrt((naive - true)^2), size),

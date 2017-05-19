@@ -275,6 +275,13 @@ optimizeSelected <- function(y, cov, threshold,
         negProb <- as.numeric(sign(y[selected][1]) == -1)
       }
       posProb <- posProb / (posProb + negProb)
+      if(is.nan(posProb)) {
+        if(sign(y[selected][1]) == 1) {
+          posProb <- 1
+        } else {
+          posProb <- 0
+        }
+      }
     }
 
     # Sampling sign followed by sampling truncated normal rv

@@ -1,11 +1,11 @@
 # Getting results ----------------------
 simResults <- list()
 slot <- 1
-for(i in 1:200) {
-  for(j in 1:30) {
+for(i in 1:10) {
+  for(j in 1:100) {
     res <- NULL
     print(c(i, j))
-    try(res <- readRDS(file = paste("fromcluster/realfmri may19 ", i," ", j,".RDS", sep ="")),
+    try(res <- readRDS(file = paste("fromcluster/simfmri may19 ", i," ", j,".RDS", sep ="")),
         silent = TRUE)
     if(!is.null(res)){
       simResults[[slot]] <- res
@@ -25,7 +25,7 @@ len <- 1
 for(i in 1:length(simResults)) {
   for(j in 1:length(simResults[[i]])) {
     nonEmpty <- sapply(simResults[[i]][[j]], length) > 0
-    iterResult <- data.frame(matrix(nrow = sum(nonEmpty), ncol = 14))
+    iterResult <- data.frame(matrix(nrow = sum(nonEmpty), ncol = 15))
     iterList <- simResults[[i]][[j]]
     row <- 1
     exp <- j * runif(1)
@@ -46,8 +46,8 @@ for(i in 1:length(simResults)) {
                              rho = as.numeric(iterList[[k]][[1]][[4]]),
                              BHlevel = as.numeric(iterList[[k]][[1]][[5]]),
                              grp_size = as.numeric(iterList[[k]][[1]][[6]]),
-                             size = as.numeric(iterList[[k]][[1]][[6]]),
-                             true = as.numeric(iterList[[k]][[1]][[7]]),
+                             size = as.numeric(iterList[[k]][[1]][[7]]),
+                             true = as.numeric(iterList[[k]][[1]][[8]]),
                              pval = as.numeric(iterList[[k]][[2]][[3]]),
                              cover = as.numeric(iterList[[k]][[2]][[2]]),
                              naive = iterList[[k]][[3]][[2]],
@@ -56,7 +56,7 @@ for(i in 1:length(simResults)) {
     }
     iterResult <- data.frame(iterResult)
     names(iterResult) <- c("experiment", "cluster", "snr", "spread", "method", "rho",
-                           "pthreshold", "grp_size", "size", "true", "pval", "cover", "naive", "cond")
+                           "pthreshold", "grp_size", "size", "true", "slack", "pval", "cover", "naive", "cond")
     resultList[[len]] <- iterResult
     len <- len + 1
   }
@@ -74,10 +74,10 @@ results$naive <- as.numeric(as.character(results$naive))
 
 # Cover Rate and Power ----------------
 level <- 0.05
-cover <- summarize(group_by(results, experiment, snr, spread, method, grp_size, pthreshold),
+cover <- summarize(group_by(results, experiment, snr, spread, method, rho, pthreshold, slack),
                    cover = sum((cover > level) * size, na.rm = TRUE) / sum(size[!is.na(cover > level)]),
                    power = pval[which.max(true)] < level)
-cover <- summarize(group_by(cover, snr, spread, method, grp_size, pthreshold),
+cover <- summarize(group_by(cover, snr, spread, method, rho, pthreshold, slack),
                    coversd = sd(cover) / sqrt(length(cover)),
                    cover = mean(cover),
                    powersd = sd(power, na.rm = TRUE) / sqrt(length(power)),
@@ -85,10 +85,10 @@ cover <- summarize(group_by(cover, snr, spread, method, grp_size, pthreshold),
 
 quantile <- qnorm(1 - 0.05 / nrow(cover))
 ciwidth <- 0.1
-coverplot <- ggplot(cover) +
+coverplot <- ggplot(subset(cover, slack == 0.5)) +
   geom_line(aes(x = snr, y = cover, col = method, linetype = method)) +
   geom_point(aes(x = snr, y = cover, col = method)) +
-  facet_grid(grp_size ~ pthreshold, labeller = "label_both") +
+  facet_grid(rho ~ pthreshold, labeller = "label_both") +
   geom_hline(yintercept = 1 - level) + theme_bw() +
   geom_segment(aes(y = pmax(cover - coversd * quantile, 0), yend = pmin(cover + coversd * quantile, 1),
                    x = snr, xend = snr, col = method, linetype = method)) +
@@ -103,7 +103,7 @@ coverplot
 powerplot <- ggplot(cover) +
   geom_line(aes(x = snr, y = power, col = method, linetype = method)) +
   geom_point(aes(x = snr, y = power, col = method)) +
-  facet_grid(grp_size ~ pthreshold, labeller = "label_both") +
+  facet_grid(rho ~ pthreshold, labeller = "label_both") +
   geom_hline(yintercept = level) + theme_bw() +
   geom_segment(aes(y = pmax(power - powersd * quantile, 0), yend = pmin(power + powersd * quantile, 1),
                    x = snr, xend = snr, col = method, linetype = method)) +
@@ -118,26 +118,26 @@ powerplot
 
 # RMSE and Bias -------------------
 naive <- subset(results, method == "selected")
-naive <- summarize(group_by(naive, snr, pthreshold, grp_size, experiment),
+naive <- summarize(group_by(naive, snr, pthreshold, rho, experiment),
                    mse = weighted.mean(sqrt((naive - true)^2), size),
                    bias = weighted.mean(sign(naive) * (naive - true), size))
-naive <- summarize(group_by(naive, snr, pthreshold, grp_size),
+naive <- summarize(group_by(naive, snr, pthreshold, rho),
                    msesd = sd(mse) / sqrt(length(mse)), mse = mean(mse),
                    biassd = sd(bias) / sqrt(length(bias)), bias = mean(bias))
 naive$method <- "naive"
 
 cond <- subset(results, method == "selected")
-cond <- summarize(group_by(cond, snr, pthreshold, grp_size, experiment),
+cond <- summarize(group_by(cond, snr, pthreshold, rho, experiment),
                   mse = weighted.mean(sqrt((cond - true)^2), size),
                   bias = weighted.mean(sign(naive)*(cond - true), size))
-cond <- summarize(group_by(cond, snr, pthreshold, grp_size),
+cond <- summarize(group_by(cond, snr, pthreshold, rho),
                   msesd = sd(mse) / sqrt(length(mse)), mse = mean(mse),
                   biassd = sd(bias) / sqrt(length(bias)), bias = mean(bias))
 cond$method <- "conditional"
 
 forplot <- rbind(naive, cond)
 mse <- ggplot(forplot, aes(x = snr, y = mse, col = method)) +
-  facet_grid(grp_size ~ pthreshold, labeller = "label_both") +
+  facet_grid(rho ~ pthreshold, labeller = "label_both") +
   geom_line(aes(linetype = method)) + geom_point() +
   geom_segment(aes(y = mse - 2 * msesd, yend = mse + 2 * msesd,
                    x = snr, xend = snr, col = method), linetype = 2) +
@@ -146,7 +146,7 @@ mse <- ggplot(forplot, aes(x = snr, y = mse, col = method)) +
 mse
 
 bias <- ggplot(forplot, aes(x = snr, y = bias, col = method)) +
-  facet_grid(grp_size ~ pthreshold, labeller = "label_both") +
+  facet_grid(rho ~ pthreshold, labeller = "label_both") +
   geom_line(aes(linetype = method)) + geom_point() +
   geom_segment(aes(y = bias - 2 * biassd, yend = bias + 2 * biassd,
                    x = snr, xend = snr, col = method), linetype = 2) +

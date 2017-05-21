@@ -4,6 +4,7 @@ run.sim <- function(config, noise_type ="sim", noise_dat = NULL) {
   spread <- config[["spread"]]
   BHlevel <- config[["BHlevel"]]
   replications <- config[["replications"]]
+  slack <- config[["slack"]]
 
   if(noise_type == "sim" ) {
     rho <- config[["rho"]]
@@ -22,7 +23,7 @@ run.sim <- function(config, noise_type ="sim", noise_dat = NULL) {
 
   if (noise_type == "sim") {
     covariance <- rho^as.matrix(dist(coordinates[, 1:3], method = "euclidean",
-                                   diag = TRUE, upper = TRUE))
+                                     diag = TRUE, upper = TRUE))
     covEigen <- eigen(covariance)
     sqrtCov <- covEigen$vectors %*% diag(sqrt(covEigen$values)) %*% t(covEigen$vectors)
   }
@@ -52,12 +53,14 @@ run.sim <- function(config, noise_type ="sim", noise_dat = NULL) {
     while(is.na(maxsize) | maxsize < 2) {
       if (noise_type == "sim") {
         coordinates <- generateArrayData3D(dims, sqrtCov, snr, spread)
+        sds <- 1
       }
       else if (noise_type == "fmri"){
         coordinates <- residualData3D(noise_dat, grp_size, snr, spread)
+        sds <- sqrt(diag(covariance))
       }
-      coordinates$observed <- coordinates$observed / sqrt(diag(covariance))
-      coordinates$signal <- coordinates$signal / sqrt(diag(covariance))
+      coordinates$observed <- coordinates$observed / sds
+      coordinates$signal <- coordinates$signal / sds
       coordinates$zval <- coordinates$observed
       coordinates$pval <- 2 * pnorm(-abs(coordinates$zval))
       coordinates$qval <- p.adjust(coordinates$pval, method = "bonferroni")
@@ -107,7 +110,7 @@ run.sim <- function(config, noise_type ="sim", noise_dat = NULL) {
                                   stepRate = 0.6,
                                   coordinates = cluster[, 1:3],
                                   tykohonovParam = NULL,
-                                  tykohonovSlack = 2,
+                                  tykohonovSlack = slack,
                                   stepSizeCoef = 2,
                                   delay = 10,
                                   assumeConvergence = 1000,
@@ -133,20 +136,20 @@ run.sim <- function(config, noise_type ="sim", noise_dat = NULL) {
         # Computing the p-value based on samples from the null
         nullfit <- NULL
         try(nullfit <- optimizeSelected(observed, subCov, threshold,
-                                       projected = 0,
-                                       selected = selected,
-                                       stepRate = 0.6,
-                                       coordinates = cluster[, 1:3],
-                                       tykohonovParam = NULL,
-                                       tykohonovSlack = 0.0001,
-                                       stepSizeCoef = 0,
-                                       delay = 1,
-                                       assumeConvergence = 1,
-                                       trimSample = 200,
-                                       maxiter = 1500,
-                                       probMethod = method,
-                                       init = rep(0, length(observed)),
-                                       imputeBoundary = "neighbors"))
+                                        projected = 0,
+                                        selected = selected,
+                                        stepRate = 0.6,
+                                        coordinates = cluster[, 1:3],
+                                        tykohonovParam = NULL,
+                                        tykohonovSlack = 0.0001,
+                                        stepSizeCoef = 0,
+                                        delay = 1,
+                                        assumeConvergence = 1,
+                                        trimSample = 200,
+                                        maxiter = 1500,
+                                        probMethod = method,
+                                        init = rep(0, length(observed)),
+                                        imputeBoundary = "neighbors"))
         if(is.null(nullfit)) next
         naive <- mean(observed[selected])
         samp <- nullfit$sample
@@ -168,7 +171,7 @@ run.sim <- function(config, noise_type ="sim", noise_dat = NULL) {
                                         stepRate = 0.6,
                                         coordinates = cluster[, 1:3],
                                         tykohonovParam = NULL,
-                                        tykohonovSlack = 2,
+                                        tykohonovSlack = slack,
                                         stepSizeCoef = 2,
                                         delay = 10,
                                         assumeConvergence = 750,
@@ -188,8 +191,8 @@ run.sim <- function(config, noise_type ="sim", noise_dat = NULL) {
         true <- mean(signal[selected])
         profResult <- c(true = mean(signal[selected]), profPval = profPval, pvalue = pvalue)
         results[[slot]][[1]] <- c(snr = snr, spread = spread, method = methodind,
-                               rho = rho, BHlevel = BHlevel,
-                               size = sum(selected), true = true)
+                                  rho = rho, BHlevel = BHlevel, grp_size = grp_size,
+                                  size = sum(selected), true = true, slack = slack)
         results[[slot]][[2]] <- profResult
         results[[slot]][[3]] <- c(conditional = conditional, naive = naive, true = true)
 
@@ -225,7 +228,7 @@ configurations <- expand.grid(snr = c(4, 3, 2, 1, 0),
                               spread = c(2),
                               rho = c(-1),
                               BHlevel = c(0.001, 0.01),
-                              replications = 2,
+                              replications = 10,
                               grp_size = c(8, 16, 32))
 
 # system.time(simResults <- apply(configurations, 1, run.sim, noise_type ="sim"))
@@ -234,7 +237,7 @@ configurations <- expand.grid(snr = c(4, 3, 2, 1, 0),
 load('fmridata/brain_data_4mm_Cambridge.rda')
 dat = brain_data$t_cube[1:11,1:11,1:9,]
 system.time(simResults <- apply(configurations, 1, run.sim, noise_type ="fmri",dat))
-save(simResults, file = "simulations/results/May 18 fmri.Robj")
+save(simResults, file = "simulations/results/May 10 fmri.Robj")
 
 
 

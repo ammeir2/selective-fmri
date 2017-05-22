@@ -121,9 +121,10 @@ run.sim <- function(config, noise_type ="sim", noise_dat = NULL) {
                                   init = observed,
                                   imputeBoundary = "neighbors"))
 
-      conditional <- mean(mle$conditional[selected])
-      naive <- mean(observed[selected])
-      true <- mean(signal[selected])
+      w <- sds[cluster$row][selected]
+      conditional <- weighted.mean(mle$conditional[selected], w)
+      naive <- weighted.mean(observed[selected], w)
+      true <- weighted.mean(signal[selected], w)
       mse <- mse * msecount / (msecount + 1) + c(naive = (naive - true)^2, conditional = (conditional - true)^2) / (msecount + 1)
       msecount <- msecount + 1
       for(methodind in 1:2) {
@@ -168,7 +169,7 @@ run.sim <- function(config, noise_type ="sim", noise_dat = NULL) {
         # that the CI doesn't cover the truth.
         try(profile <- optimizeSelected(observed, subCov, threshold,
                                         selected = selected,
-                                        projected = mean(signal[selected]),
+                                        projected = weighted.mean(signal[selected], w),
                                         stepRate = 0.6,
                                         coordinates = cluster[, 1:3],
                                         tykohonovParam = NULL,
@@ -189,7 +190,7 @@ run.sim <- function(config, noise_type ="sim", noise_dat = NULL) {
         # Two sided CI
         profPval <- 2 * min(mean(naive < profMeans), mean(naive > profMeans))
 
-        true <- mean(signal[selected])
+        true <- weighted.mean(signal[selected], w)
         profResult <- c(true = mean(signal[selected]), profPval = profPval, pvalue = pvalue)
         results[[slot]][[1]] <- c(snr = snr, spread = spread, method = methodind,
                                   rho = rho, BHlevel = BHlevel, grp_size = grp_size,
@@ -230,16 +231,16 @@ configurations <- expand.grid(snr = c(4, 3, 2, 1, 0),
                               rho = c(-1),
                               BHlevel = c(0.001, 0.01),
                               replications = 10,
-                              grp_size = c(8, 16, 32),
+                              grp_size = c(8, 16),
                               slack = 2)
 
 # system.time(simResults <- apply(configurations, 1, run.sim, noise_type ="sim"))
 #save(simResults, file = "simulations/results/May 18 sim.Robj")
 
-#load('fmridata/brain_data_4mm_Cambridge.rda')
-#dat = brain_data$t_cube[1:11,1:11,1:9,]
-#system.time(simResults <- apply(configurations, 1, run.sim, noise_type ="fmri",dat))
-#save(simResults, file = "simulations/results/May 10 fmri.Robj")
+load('fmridata/brain_data_4mm_Cambridge.rda')
+dat = brain_data$t_cube[1:11,1:11,1:9,]
+system.time(simResults <- apply(configurations, 1, run.sim, noise_type ="fmri",dat))
+ave(simResults, file = "simulations/results/May 22 fmri.Robj")
 
 
 

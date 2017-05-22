@@ -1,11 +1,11 @@
 # Getting results ----------------------
 simResults <- list()
 slot <- 1
-for(i in 1:200) {
+for(i in 1:100) {
   for(j in 1:30) {
     res <- NULL
     print(c(i, j))
-    try(res <- readRDS(file = paste("fromcluster/realfmri may19 ", i," ", j,".RDS", sep ="")),
+    try(res <- readRDS(file = paste("fromcluster/realfmri may22 ", i," ", j,".RDS", sep ="")),
         silent = TRUE)
     if(!is.null(res)){
       simResults[[slot]] <- res

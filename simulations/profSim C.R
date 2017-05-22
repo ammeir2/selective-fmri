@@ -32,9 +32,9 @@ run.sim <- function(config, noise_type ="sim", noise_dat = NULL) {
     pop_size <- dim(noise_dat)[4]
     dim(noise_dat) = c(prod(dims), pop_size)
     alpha <- 1/pop_size
-    sds <- apply(noise_dat, 1, sd)
+    sample_sds <- apply(noise_dat, 1, sd)
     # covariance of a single sample
-    sample_covariance <- (1-alpha)*cov(t(noise_dat))+alpha*diag(sds^2)
+    sample_covariance <- (1-alpha)*cov(t(noise_dat))+alpha*diag(sample_sds^2)
     # covariance of group averages
     covariance <- sample_covariance*(1/grp_size*2)
     dim(noise_dat) <- c(dims[1:3],pop_size)
@@ -57,8 +57,9 @@ run.sim <- function(config, noise_type ="sim", noise_dat = NULL) {
       }
       else if (noise_type == "fmri"){
         coordinates <- residualData3D(noise_dat, grp_size, snr, spread)
-        sds <- sqrt(diag(covariance))
+        sds <- sqrt(diag(covariance))/coordinates$scale_coef
       }
+
       coordinates$observed <- coordinates$observed / sds
       coordinates$signal <- coordinates$signal / sds
       coordinates$zval <- coordinates$observed
@@ -229,15 +230,16 @@ configurations <- expand.grid(snr = c(4, 3, 2, 1, 0),
                               rho = c(-1),
                               BHlevel = c(0.001, 0.01),
                               replications = 10,
-                              grp_size = c(8, 16, 32))
+                              grp_size = c(8, 16, 32),
+                              slack = 2)
 
 # system.time(simResults <- apply(configurations, 1, run.sim, noise_type ="sim"))
 #save(simResults, file = "simulations/results/May 18 sim.Robj")
 
-load('fmridata/brain_data_4mm_Cambridge.rda')
-dat = brain_data$t_cube[1:11,1:11,1:9,]
-system.time(simResults <- apply(configurations, 1, run.sim, noise_type ="fmri",dat))
-save(simResults, file = "simulations/results/May 10 fmri.Robj")
+#load('fmridata/brain_data_4mm_Cambridge.rda')
+#dat = brain_data$t_cube[1:11,1:11,1:9,]
+#system.time(simResults <- apply(configurations, 1, run.sim, noise_type ="fmri",dat))
+#save(simResults, file = "simulations/results/May 10 fmri.Robj")
 
 
 

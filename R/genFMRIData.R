@@ -19,8 +19,8 @@ residualData3D <- function(dat, grp_size, targetSnr ,spread = 1) {
   # Generating noise + data -----------------
   pop_n = dim(dat)[4]
   samp = sample(pop_n, grp_size*2, replace = FALSE)
-  noise <- as.numeric((apply(dat[,,,samp[1:grp_size]],c(1,2,3),mean) -
-                         apply(dat[,,,samp[grp_size+(1:grp_size)]],c(1,2,3),mean))/2)
+  noise <- as.numeric(apply(dat[,,,samp[1:grp_size]],c(1,2,3),mean) -
+                         apply(dat[,,,samp[grp_size+(1:grp_size)]],c(1,2,3),mean))
 
   scale_noise = sd(noise)
   coordinates$noise <- noise/scale_noise

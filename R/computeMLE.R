@@ -222,7 +222,7 @@ optimizeSelected <- function(y, cov, threshold,
 
   estimates <- matrix(nrow = maxiter, ncol = p)
   sampleMat <- matrix(nrow = maxiter - 1, ncol = length(y))
-  gradSamp <- matrix(nrow = maxiter - 1, ncol = sum(selected))
+  #gradSamp <- matrix(nrow = maxiter - 1, ncol = sum(selected))
   estimates[1, ] <- mu
   # initial values for positive/negative Gibbs samplers
   posSamp <- abs(y)
@@ -246,6 +246,10 @@ optimizeSelected <- function(y, cov, threshold,
   tykohonovParam <- pmax(tykohonovParam, 10^-3)
 
   for(i in 2:maxiter) {
+    if(i - 1 > nrow(sampleMat)) {
+      maxiter <- maxiter - 1
+      break # Fix for odd bug
+    }
     # Every now and then recompute probability to be positive/negative
     if((i == 2 | i < (100 + delay) & (i %% 4 == 0)) | (i %% 50 == 0 & i <= assumeConvergence)) {
       a[selected] <- threshold[selected]
@@ -342,7 +346,7 @@ optimizeSelected <- function(y, cov, threshold,
     # Computing gradient and projecting if necessary
     # The projection of the gradient is simply setting its mean to zero
     rawGradient <- (suffStat - condExp + barrierGrad)
-    gradSamp[i - 1, ] <- rawGradient[selected]
+    #gradSamp[i - 1, ] <- rawGradient[selected] # no longer used
     gradient <-  rawGradient / max(i - delay, 1) * stepSizeCoef
     gradient[!selected] <- 0
     gradsign <- sign(gradient)
@@ -385,15 +389,15 @@ optimizeSelected <- function(y, cov, threshold,
                                         firstDiff, secondDiff,
                                         tykohonovSlack, tykohonovParam)
     }
-    estimates[i,] <- mu
+    estimates[i, ] <- mu
 
     # progress...
-    if((i %% 100) == 0) {
-      #cat(i, " ")
-      # cat(i, " ", round(mean(mu[selected]), 3), " ")
-      # print(c(tyk = tykohonovParam))
-      #print(mu[selected])
-    }
+    # if((i %% 100) == 0) {
+    #   cat(i, " ")
+    #   cat(i, " ", round(mean(mu[selected]), 3), " ")
+    #   print(c(tyk = tykohonovParam))
+    #   print(mu[selected])
+    # }
   }
   #cat("\n")
 
@@ -401,46 +405,48 @@ optimizeSelected <- function(y, cov, threshold,
     warning(paste("Chain restarted", restarts, "times!"))
   }
 
-  # Computations for confidence intervals
-  forQuants <- gradSamp[(assumeConvergence + 1):(maxiter - 1), , drop = FALSE]
-  if(sum(selected) > 1) {
-    forQuants <- apply(forQuants, 2, function(x) x - mean(x))
-    gradcov <- var(forQuants)
-    invcov <- MASS::ginv(gradcov)
-    forQuants <- forQuants %*% invcov
-    for(i in 1:ncol(forQuants)) {
-      forQuants[, i] <- forQuants[, i] * sqrt(vars[selected][i])
-    }
-    meanquantiles <- quantile(rowMeans(forQuants), c(1 - CIalpha / 2, CIalpha / 2))
-    ciQuantiles <- apply(forQuants, 2, function(x) quantile(x, c(1 - CIalpha / 2, CIalpha / 2)))
-  } else {
-    forQuants <- forQuants - mean(forQuants)
-    gradcov <- var(forQuants)
-    forQuants <- forQuants * 1 / as.numeric(gradcov)
-    forQuants <- forQuants * sqrt(vars[selected])
-    meanquantiles <- quantile(forQuants, c(1 - CIalpha / 2, CIalpha / 2))
-    ciQuantiles <- meanquantiles
-  }
-
   # Unnormalizing estimates and samples --------------------------
   for(i in 1:ncol(sampleMat)) {
     sampleMat[, i] <- sampleMat[, i] * sqrt(vars[i])
     estimates[, i] <- estimates[, i] * sqrt(vars[i])
   }
-
-  # Computing estimate and CIs -----------------------------
   conditional <- colMeans(estimates[floor(maxiter * 0.8):maxiter, ])
-  meanCI <- mean(conditional[selected]) - meanquantiles
-  ciQuantiles <- apply(forQuants, 2, function(x) quantile(x, c(1 - CIalpha / 2, CIalpha / 2)))
-  CI <- matrix(nrow = sum(selected), ncol = 2)
-  for(i in 1:ncol(ciQuantiles)) {
-    CI[i, ] <- conditional[selected][i] - ciQuantiles[, i]
-  }
 
-  #print(c(tyk = tykohonovParam))
   return(list(sample = sampleMat,
               estimates = estimates,
-              conditional = conditional,
-              coordinateCI = CI,
-              meanCI = meanCI))
+              conditional = conditional))
 }
+
+
+# # Computations for confidence intervals
+# forQuants <- gradSamp[(assumeConvergence + 1):(maxiter - 1), , drop = FALSE]
+# if(sum(selected) > 1) {
+#   forQuants <- apply(forQuants, 2, function(x) x - mean(x))
+#   gradcov <- var(forQuants)
+#   invcov <- MASS::ginv(gradcov)
+#   forQuants <- forQuants %*% invcov
+#   for(i in 1:ncol(forQuants)) {
+#     forQuants[, i] <- forQuants[, i] * sqrt(vars[selected][i])
+#   }
+#   meanquantiles <- quantile(rowMeans(forQuants), c(1 - CIalpha / 2, CIalpha / 2))
+#   ciQuantiles <- apply(forQuants, 2, function(x) quantile(x, c(1 - CIalpha / 2, CIalpha / 2)))
+# } else {
+#   forQuants <- forQuants - mean(forQuants)
+#   gradcov <- var(forQuants)
+#   forQuants <- forQuants * 1 / as.numeric(gradcov)
+#   forQuants <- forQuants * sqrt(vars[selected])
+#   meanquantiles <- quantile(forQuants, c(1 - CIalpha / 2, CIalpha / 2))
+#   ciQuantiles <- meanquantiles
+# }
+#
+
+#
+# # Computing estimate and CIs -----------------------------
+# conditional <- colMeans(estimates[floor(maxiter * 0.8):maxiter, ])
+# meanCI <- mean(conditional[selected]) - meanquantiles
+# ciQuantiles <- apply(forQuants, 2, function(x) quantile(x, c(1 - CIalpha / 2, CIalpha / 2)))
+# CI <- matrix(nrow = sum(selected), ncol = 2)
+# for(i in 1:ncol(ciQuantiles)) {
+#   CI[i, ] <- conditional[selected][i] - ciQuantiles[, i]
+# }
+

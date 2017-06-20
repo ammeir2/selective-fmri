@@ -121,7 +121,8 @@ run.sim <- function(config, noise_type ="sim", noise_dat = NULL) {
                                   init = observed,
                                   imputeBoundary = "neighbors"))
 
-      w <- sds[cluster$row][selected]
+      w <- rep(1, sum(selected))
+      w <- w / sum(w)
       conditional <- weighted.mean(mle$conditional[selected], w)
       naive <- weighted.mean(observed[selected], w)
       true <- weighted.mean(signal[selected], w)
@@ -133,6 +134,8 @@ run.sim <- function(config, noise_type ="sim", noise_dat = NULL) {
         } else if(methodind == 2) {
           method <- "selected"
         }
+        w <- rep(1, sum(selected))
+        w <- w / sum(w)
         results[[slot]] <- list()
 
         # Computing the p-value based on samples from the null
@@ -156,7 +159,7 @@ run.sim <- function(config, noise_type ="sim", noise_dat = NULL) {
         naive <- mean(observed[selected])
         samp <- nullfit$sample
         nullmeans <- NULL
-        try(nullmeans <- rowMeans(samp[, selected, drop = FALSE]))
+        try(nullmeans <- as.numeric(samp[, selected, drop = FALSE] %*% w))
         if(is.null(nullmeans)) next
         # p-value based on one sided test
         if(naive > 0) {
@@ -185,7 +188,7 @@ run.sim <- function(config, noise_type ="sim", noise_dat = NULL) {
 
         samp <- profile$sample
         profMeans <- NULL
-        try(profMeans <- rowMeans(samp[, selected, drop = FALSE]))
+        try(profMeans <- as.numeric(samp[, selected, drop = FALSE] %*% w))
         if(is.null(profMeans)) next
         # Two sided CI
         profPval <- 2 * min(mean(naive < profMeans), mean(naive > profMeans))
@@ -196,7 +199,12 @@ run.sim <- function(config, noise_type ="sim", noise_dat = NULL) {
                                   rho = rho, BHlevel = BHlevel, grp_size = grp_size,
                                   size = sum(selected), true = true, slack = slack)
         results[[slot]][[2]] <- profResult
-        results[[slot]][[3]] <- c(conditional = conditional, naive = naive, true = true)
+        results[[slot]][[4]] <- c(conditional = conditional, naive = naive, true = true)
+        w <- sds[cluster$row][selected]
+        w <- w / sum(w)
+        results[[slot]][[3]] <- c(conditional = weighted.mean(mle$conditional[selected], w),
+                                 naive = weighted.mean(observed[selected], w),
+                                 true = weighted.mean(signal[selected], w))
 
         print(profResult)
         print(mse)
